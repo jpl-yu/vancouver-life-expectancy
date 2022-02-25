@@ -1,0 +1,275 @@
+---
+title: "PreparePop"
+output: html_document
+---
+
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                       
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load the relevant libraries and data                                                     
+             (B) Relabel all years to appropriate years                                                                
+             (C) Merge all datasets into one                                                                        
+             (D) Subset population files for each census year
+             (E) Load crosswalk data
+             (F) Apply crosswalk tables to population data
+             (G) Extract some descriptive statistics
+             (H) Relabel some columns and save crosswalked population files
+
+             
+## Load the relevant libraries and data files
+
+```{r}
+library("dplyr")
+library("tidyr")
+library("data.table")
+dir<-"R:/working/preparing data/PopulationData/allyears/"
+year<-1990:2016
+census<-c(2016,2011,2006,2001,1996,1991)
+
+for (i in year) {
+  load(paste0(dir, i, "/allPop", i, ".Rdata"))
+}
+
+```
+
+
+## Relabel all years to appropriate years
+
+```{r}
+Pop1990$year <-rep(1990,nrow(Pop1990))
+Pop1991$year <-rep(1991,nrow(Pop1991))
+Pop1992$year <-rep(1992,nrow(Pop1992))
+Pop1993$year <-rep(1993,nrow(Pop1993))
+Pop1994$year <-rep(1994,nrow(Pop1994))
+Pop1995$year <-rep(1995,nrow(Pop1995))
+Pop1996$year <-rep(1996,nrow(Pop1996))
+Pop1997$year <-rep(1997,nrow(Pop1997))
+Pop1998$year <-rep(1998,nrow(Pop1998))
+Pop1999$year <-rep(1999,nrow(Pop1999))
+Pop2000$year <-rep(2000,nrow(Pop2000))
+Pop2001$year <-rep(2001,nrow(Pop2001))
+Pop2002$year <-rep(2002,nrow(Pop2002))
+Pop2003$year <-rep(2003,nrow(Pop2003))
+Pop2004$year <-rep(2004,nrow(Pop2004))
+Pop2005$year <-rep(2005,nrow(Pop2005))
+Pop2006$year <-rep(2006,nrow(Pop2006))
+Pop2007$year <-rep(2007,nrow(Pop2007))
+Pop2008$year <-rep(2008,nrow(Pop2008))
+Pop2009$year <-rep(2009,nrow(Pop2009))
+Pop2010$year <-rep(2010,nrow(Pop2010))
+Pop2011$year <-rep(2011,nrow(Pop2011))
+Pop2012$year <-rep(2012,nrow(Pop2012))
+Pop2013$year <-rep(2013,nrow(Pop2013))
+Pop2014$year <-rep(2014,nrow(Pop2014))
+Pop2015$year <-rep(2015,nrow(Pop2015))
+```
+
+## Merge all datasets into one
+
+```{r}
+popfiles<-rbind(Pop1990,Pop1991,Pop1992,Pop1993,Pop1994,Pop1995,Pop1996,Pop1997,Pop1998,Pop1999, Pop2000, Pop2001, Pop2002, Pop2003, Pop2004, Pop2005, Pop2006, Pop2007, Pop2008, Pop2009, Pop2010, Pop2011, Pop2012, Pop2013, Pop2014, Pop2015, Pop2016)
+
+popfiles<-subset(popfiles, CT>0)
+
+popInfo <- pop %>%
+  group_by(year, CT) %>%
+  summarise(pop=sum(pop))
+
+popNA<-popfiles[is.na(popfiles$pop),]
+popNaCount<-popNA %>%
+  group_by(year,CT) %>%
+  summarise()
+
+#popfiles[is.na(popfiles)]<-0 #included 0 for areas with NA values
+pop<-popfiles
+
+```
+
+## Recode age and save
+
+```{r}
+#Merge all datasets
+detach("package:dplyr", unload=TRUE)
+library("car")
+pop$age<-recode(pop$age,"4=0;9=5;14=10;19=15;24=20;29=25;34=30;39=35;44=40;49=45;54=50;59=55;64=60;69=65;74=70;79=75;84=80;85=85")#must unload dplyr for recode in car package to work
+
+library("dplyr")
+pop<-subset(pop,CT>0)
+```
+
+
+## Subset population files for each census year
+
+```{r}
+popfiles9093<-subset(pop, year == 1991)
+
+popfiles9498<-subset(pop, year == 1996)
+
+popfiles9903<-subset(pop, year == 2001)
+
+popfiles0408<-subset(pop, year == 2006)
+
+popfiles0913<-subset(pop, year == 2011)
+
+popfiles1416<-subset(pop, year == 2016)
+
+names(popfiles9093)[2]<-"ctuid_s"
+names(popfiles9498)[2]<-"ctuid_s"
+names(popfiles9903)[2]<-"ctuid_s"
+names(popfiles0408)[2]<-"ctuid_s"
+names(popfiles0913)[2]<-"ctuid_s"
+names(popfiles1416)[2]<-"ctuid_s"
+
+
+library("dplyr")
+save(popfiles9093, file="R:/working/preparing data/PopulationData/prepareCrosswalk/pop9093.RData")
+save(popfiles9498, file="R:/working/preparing data/PopulationData/prepareCrosswalk/pop9498.RData")
+save(popfiles9903, file="R:/working/preparing data/PopulationData/prepareCrosswalk/pop9903.RData")
+save(popfiles0408, file="R:/working/preparing data/PopulationData/prepareCrosswalk/pop0408.RData")
+save(popfiles0913, file="R:/working/preparing data/PopulationData/prepareCrosswalk/pop0913.RData")
+save(popfiles1416, file="R:/working/preparing data/PopulationData/prepareCrosswalk/pop1416.RData")
+
+```
+
+## Load crosswalk data and pop data if not already loaded
+
+
+```{r}
+
+#load crosswalks
+crosswalk91<-read.csv(file="R:/working/preparing data/prepareCrosswalk/prepared/crosswalk91.csv", header=TRUE)
+crosswalk96<-read.csv(file="R:/working/preparing data/prepareCrosswalk/prepared/crosswalk96.csv", header=TRUE)
+crosswalk01<-read.csv(file="R:/working/preparing data/prepareCrosswalk/prepared/crosswalk01.csv", header=TRUE)
+crosswalk06<-read.csv(file="R:/working/preparing data/prepareCrosswalk/prepared/crosswalk06.csv", header=TRUE)
+crosswalk11<-read.csv(file="R:/working/preparing data/prepareCrosswalk/prepared/crosswalk11.csv", header=TRUE)
+
+
+#load popfiles
+load("R:/working/preparing data/PopulationData/prepareCrosswalk/pop9093.RData")
+load("R:/working/preparing data/PopulationData/prepareCrosswalk/pop9498.RData")
+load("R:/working/preparing data/PopulationData/prepareCrosswalk/pop0408.RData")
+load("R:/working/preparing data/PopulationData/prepareCrosswalk/pop0913.RData")
+load("R:/working/preparing data/PopulationData/prepareCrosswalk/pop1416.RData")
+load("R:/working/preparing data/PopulationData/prepareCrosswalk/pop9903.RData")
+```
+
+## Apply crosswalk tables to population data
+
+```{r}
+#Multiply 1991 pop file with crosswalk table to get 2016 CT estimates
+pop9093<-merge(x=crosswalk91, y=popfiles9093, by="ctuid_s", all.y=TRUE)
+pop9093<-subset(pop9093, ctuid_s>0)
+pop9093<-pop9093[order(pop9093$ctuid_s,pop9093$year,pop9093$sex, pop9093$age),]
+pop9093<-pop9093 %>% mutate(pop9093 = w * pop)
+pop1991 = pop9093 %>% group_by(ctuid_t, year, sex, age) %>%
+  summarise(pop9093 = sum(pop9093, na.rm = T))
+pop1991<-pop1991[order(pop1991$ctuid_t,pop1991$year,pop1991$sex, pop1991$age),]
+
+#Multiply 1996 pop file with crosswalk table to get 2016 CT estimates
+pop9498<-merge(x=crosswalk96, y=popfiles9498, by="ctuid_s", all.y=TRUE)
+pop9498<-subset(pop9498, ctuid_s>0)
+pop9498<-pop9498[order(pop9498$ctuid_s,pop9498$year,pop9498$sex, pop9498$age),]
+pop9498<-pop9498 %>% mutate(pop9498 = w * pop)
+pop1996 = pop9498 %>% group_by(ctuid_t, year, sex, age) %>%
+  summarise(pop9498 = sum(pop9498, na.rm = T))
+pop1996<-pop1996[order(pop1996$ctuid_t,pop1996$year,pop1996$sex, pop1996$age),]
+
+#Multiply 2001 pop file with crosswalk table to get 2016 CT estimates
+pop9903<-merge(x=crosswalk01, y=popfiles9903, by="ctuid_s", all.y=TRUE)
+pop9903<-subset(pop9903, ctuid_s>0)
+pop9903<-pop9903[order(pop9903$ctuid_s,pop9903$year,pop9903$sex, pop9903$age),]
+pop9903<-pop9903 %>% mutate(pop9903 = w * pop)
+pop2001 = pop9903 %>% group_by(ctuid_t, year, sex, age) %>%
+  summarise(pop9903 = sum(pop9903, na.rm = T))
+pop2001<-pop2001[order(pop2001$ctuid_t,pop2001$year,pop2001$sex, pop2001$age),]
+
+#Multiply 2006 pop file with crosswalk table to get 2016 CT estimates
+pop0408<-merge(x=crosswalk06, y=popfiles0408, by="ctuid_s", all.y=TRUE)
+pop0408<-subset(pop0408, ctuid_s>0)
+pop0408<-pop0408[order(pop0408$ctuid_s,pop0408$year,pop0408$sex, pop0408$age),]
+pop0408<-pop0408 %>% mutate(pop0408 = w * pop)
+pop2006 = pop0408 %>% group_by(ctuid_t, year, sex, age) %>%
+  summarise(pop0408 = sum(pop0408, na.rm = T))
+pop2006<-pop2006[order(pop2006$ctuid_t,pop2006$year,pop2006$sex, pop2006$age),]
+
+#Multiply 2011 pop file with crosswalk table to get 2016 CT estimates
+pop0913<-merge(x=crosswalk11, y=popfiles0913, by="ctuid_s", all.y=TRUE)
+pop0913<-subset(pop0913, ctuid_s>0)
+pop0913<-pop0913[order(pop0913$ctuid_s,pop0913$year,pop0913$sex, pop0913$age),]
+pop0913<-pop0913 %>% mutate(pop0913 = w * pop)
+pop2011 = pop0913 %>% group_by(ctuid_t, year, sex, age) %>%
+  summarise(pop0913 = sum(pop0913, na.rm = T))
+pop2011<-pop2011[order(pop2011$ctuid_t,pop2011$year,pop2011$sex, pop2011$age),]
+
+pop2016<-popfiles1416
+pop2016<-subset(pop2016, ctuid_s>0)
+names(pop2016)[2]<-"ctuid_t"
+
+save(pop1991, file="R:/working/preparing data/PopulationData/prepareCrosswalk/newPop1991.RData")
+save(pop1996, file="R:/working/preparing data/PopulationData/prepareCrosswalk/newPop1996.RData")
+save(pop2001, file="R:/working/preparing data/PopulationData/prepareCrosswalk/newPop2001.RData")
+save(pop2006, file="R:/working/preparing data/PopulationData/prepareCrosswalk/newPop2006.RData")
+save(pop2011, file="R:/working/preparing data/PopulationData/prepareCrosswalk/newPop2011.RData")
+save(pop2016, file="R:/working/preparing data/PopulationData/prepareCrosswalk/newPop2016.RData")
+
+#relabel some columns
+
+pop1991<-data.frame(pop1991)
+pop1996<-data.frame(pop1996)
+pop2001<-data.frame(pop2001)
+pop2006<-data.frame(pop2006)
+pop2011<-data.frame(pop2011)
+pop2016<-data.frame(pop2016)
+
+names(pop1991)[5]<-"pop"
+names(pop1996)[5]<-"pop"
+names(pop2001)[5]<-"pop"
+names(pop2006)[5]<-"pop"
+names(pop2011)[5]<-"pop"
+names(pop2016)[5]<-"pop"
+
+pop<-rbind(pop1991,pop1996,pop2001,pop2006,pop2011,pop2016)
+names(pop)[1]<-"CT"
+
+```
+
+# Extract some descriptive statistics
+
+```{r}
+
+popInfo <- pop %>%
+  group_by(year, CT) %>%
+  summarise(pop=sum(pop))
+
+popNA<-pop[is.na(pop$pop),]
+popNaCount<-popNA %>%
+  group_by(year,CT) %>%
+  summarise()
+
+```
+
+#Relabel some columns and save census population file
+
+```{r}
+#Order data sequentially 
+pop<-pop[order(pop$CT),]
+
+#Change from numeric to integer
+pop$sex<-as.integer(pop$sex)
+
+pop$age<-as.numeric(as.character(pop$age))
+pop$year<-as.integer(pop$year)
+
+#Convert final data frame into data table
+pop<-setDT(pop)
+
+pop<-pop[,c(2,1,3,4,5)]
+
+save(pop, file="R:/working/preparing data/PopulationData/prepareCrosswalk/censusPop.RData")
+```
+

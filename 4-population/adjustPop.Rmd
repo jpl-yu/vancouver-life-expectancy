@@ -1,0 +1,435 @@
+---
+title: "adjustPop"
+output: html_document
+---
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                       
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Create dummy pop file that includes all rows of data                                                   
+             (B) Load crosswalked population file, summarise data, and relabel columns as needed                                                      
+             (C) Separately interpolate CT 58 -only needed to run once                                                                        
+             (D) Linearly interpolate CTs 161.07, 251.01, 290.06, 400.07, 400.08
+             (E) Linearly interpolate
+             (F) Remove interpolated CTs removed from original dataset
+             (G) Finalise columns, summarise, and save interpolate pop file
+             (H)
+             (I) Load merge file and merge popfiles as needed for shapefiles
+  
+             
+#Create dummy pop file that includes all rows of data 
+
+```{r}
+age<-c(0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85)
+sex<-c(1,2)
+pop<-c(0)
+year<-c(1991,1996,2001,2006,2011,2016)
+
+popDF<-data.frame(age,pop)
+
+popDF2 <- cbind(rep(1, nrow(popDF)), popDF)
+for(i in 2){
+  a <- cbind(rep(i, nrow(popDF)), popDF)
+  names(a) <- names(popDF2)
+  popDF2 <- rbind(popDF2, a)
+}
+popDF2 <- as.data.frame(popDF2)
+names(popDF2)[1]<-"sex"
+
+years<-c(1996,2001,2006,2011,2016)
+
+b <- cbind(rep(1991, nrow(popDF2)), popDF2)
+for(i in years){
+  a <- cbind(rep(i, nrow(popDF2)), popDF2)
+  names(a) <- names(b)
+  b <- rbind(b, a)
+}
+popDF <- as.data.frame(b)
+names(popDF)[1]<-"year"
+
+
+load("R:/working/preparing data/listCTs.RData")
+PopUniqueCT<-as.data.frame(listCTs)
+PopUniqueCT<-PopUniqueCT[-1,]
+
+b <- cbind(rep(1.01, nrow(popDF)), popDF)
+for(i in PopUniqueCT){
+  a <- cbind(rep(i, nrow(popDF)), popDF)
+  names(a) <- names(b)
+  b <- rbind(b, a)
+}
+popDF <- as.data.frame(b)
+names(popDF)[1]<-"CT"
+
+popDF<-popDF %>%
+  select(year,CT,sex,age,pop)
+
+setDT(popDF)
+
+#remove all but my popDF file
+rm(list=(ls()[ls()!="popDF"]))
+
+```
+
+#Load crosswalked population file, summarise data, and relabel columns as needed
+
+```{r}
+
+library(dplyr)
+
+load("R:/working/preparing data/PopulationData/prepareCrosswalk/censusPop.RData")
+
+pop<-pop %>% 
+  drop_na(CT) %>%
+  group_by(year,CT,sex,age) %>%
+  summarise(pop=mean(pop))
+
+popDF2 <- popDF %>%
+  merge(pop, by=c("year","CT","sex","age"))
+
+popDF2$pop.x<-popDF2$pop.y
+
+pop<-popDF2 %>%
+  select(year,CT,sex,age,pop.x) %>%
+  rename(pop=pop.x)
+
+#remove all but my popDF file
+rm(list=(ls()[ls()!="pop"]))
+
+pop91<-subset(pop, year==1991)
+
+pop96<-subset(pop, year==1996)
+
+pop01<-subset(pop, year==2001)
+
+pop06<-subset(pop, year==2006)
+
+pop11<-subset(pop, year==2011)
+
+pop16<-subset(pop, year==2016)
+
+
+pop91<-select(pop91,2,3,4,5)
+pop96<-select(pop96,2,3,4,5)
+pop01<-select(pop01,2,3,4,5)
+pop06<-select(pop06,2,3,4,5)
+pop11<-select(pop11,2,3,4,5)
+pop16<-select(pop16,2,3,4,5)
+
+names(pop91)[4]<-"pop91"
+names(pop96)[4]<-"pop96"
+names(pop01)[4]<-"pop01"
+names(pop06)[4]<-"pop06"
+names(pop11)[4]<-"pop11"
+names(pop16)[4]<-"pop16"
+
+```
+
+
+#Separately interpolate CT 58 -only needed to run once
+
+```{r}
+pop06.58<-subset(pop06, CT==58.00)
+pop16.58<-subset(pop16, CT==58.00)
+
+#1990-1996
+pop58<-cbind(pop06.58, pop16.58)
+pop58<-pop58[,c(1,2,3,4,8)]
+diff58<-(pop58$pop16-pop58$pop06)/10
+
+pop58$pop07<-pop58$pop06+diff58 
+pop58$pop08<-pop58$pop07+diff58
+pop58$pop09<-pop58$pop08+diff58
+pop58$pop10<-pop58$pop09+diff58
+pop58$pop11<-pop58$pop10+diff58
+pop58$pop12<-pop58$pop11+diff58
+pop58$pop13<-pop58$pop12+diff58
+pop58$pop14<-pop58$pop13+diff58
+pop58$pop15<-pop58$pop14+diff58
+
+
+pop58.7<-pop58[,c("CT","sex","age","pop07")]
+pop58.8<-pop58[,c("CT","sex","age","pop08")]
+pop58.9<-pop58[,c("CT","sex","age","pop09")]
+pop58.10<-pop58[,c("CT","sex","age","pop10")]
+pop58.11<-pop58[,c("CT","sex","age","pop11")]
+pop58.12<-pop58[,c("CT","sex","age","pop12")]
+pop58.13<-pop58[,c("CT","sex","age","pop13")]
+pop58.14<-pop58[,c("CT","sex","age","pop14")]
+pop58.15<-pop58[,c("CT","sex","age","pop15")]
+
+names(pop06.58)<-c("CT","sex","age","pop")
+names(pop58.7)<-c("CT","sex","age","pop")
+names(pop58.8)<-c("CT","sex","age","pop")
+names(pop58.9)<-c("CT","sex","age","pop")
+names(pop58.10)<-c("CT","sex","age","pop")
+names(pop58.11)<-c("CT","sex","age","pop")
+names(pop58.12)<-c("CT","sex","age","pop")
+names(pop58.13)<-c("CT","sex","age","pop")
+names(pop58.14)<-c("CT","sex","age","pop")
+names(pop58.15)<-c("CT","sex","age","pop")
+names(pop16.58)<-c("CT","sex","age","pop")
+
+pop06.58$year<-2006
+pop58.7$year<-2007
+pop58.8$year<-2008
+pop58.9$year<-2009
+pop58.10$year<-2010
+pop58.11$year<-2011
+pop58.12$year<-2012
+pop58.13$year<-2013
+pop58.14$year<-2014
+pop58.15$year<-2015
+pop16.58$year<-2016
+
+
+pop58.final<-rbind(pop06.58,pop58.7,pop58.8,pop58.9,pop58.10,pop58.11,pop58.12,pop58.13,pop58.14,pop58.15,pop16.58)
+
+
+```
+
+#Linearly interpolate CTs 161.07, 251.01, 290.06, 400.07, 400.08 - not necessary to re-run unless you want to modify how to deal with certain CTs that don't interpolate well into other years - 290.06, 400.07, and 400.08
+
+```{r}
+pop11.161<-subset(pop06, CT==161.07)
+pop16.161<-subset(pop11, CT==161.07)
+pop161<-cbind(pop11.161, pop16.161)
+
+
+pop11.251<-subset(pop06, CT==251.01)
+pop16.251<-subset(pop11, CT==251.01)
+pop251<-cbind(pop11.251, pop16.251)
+
+
+pop11.290<-subset(pop06, CT==290.07)
+pop16.290<-subset(pop11, CT==290.07)
+pop290<-cbind(pop11.290, pop16.290)
+
+
+pop11.4007<-subset(pop06, CT==400.07)
+pop16.4007<-subset(pop11, CT==400.07)
+pop4007<-cbind(pop11.4007, pop16.4007)
+
+
+pop11.4008<-subset(pop06, CT==400.08)
+pop16.4008<-subset(pop11, CT==400.08)
+pop4008<-cbind(pop11.4008, pop16.4008)
+
+
+listPop<-list(pop161,pop251,pop290,pop4007,pop4008)
+
+listpop<-lapply(listPop, function(x) x[,c(1,2,3,4,8)])
+for(i in seq_along(listpop)){
+  listpop[[i]]$diff <-listpop[[i]]$pop11-listpop[[i]]$pop06/5
+}
+for(i in seq_along(listpop)){
+  listpop[[i]]$pop12 <-listpop[[i]]$pop11+listpop[[i]]$diff
+  listpop[[i]]$pop13 <-listpop[[i]]$pop12+listpop[[i]]$diff
+  listpop[[i]]$pop14 <-listpop[[i]]$pop13+listpop[[i]]$diff
+  listpop[[i]]$pop15 <-listpop[[i]]$pop14+listpop[[i]]$diff
+  listpop[[i]]$pop16 <-listpop[[i]]$pop15+listpop[[i]]$diff
+}
+
+listpop<-lapply(listpop, function(x) x[,!c(4:6)])
+
+popMissing<-do.call(rbind, lapply(listpop, function(x) x[,1:8]))
+
+popMissing12<-popMissing[,c("CT","sex","age","pop12")]
+popMissing13<-popMissing[,c("CT","sex","age","pop13")]
+popMissing14<-popMissing[,c("CT","sex","age","pop14")]
+popMissing15<-popMissing[,c("CT","sex","age","pop15")]
+popMissing16<-popMissing[,c("CT","sex","age","pop16")]
+
+names(popMissing12)[4]<-"pop"
+names(popMissing13)[4]<-"pop"
+names(popMissing14)[4]<-"pop"
+names(popMissing15)[4]<-"pop"
+names(popMissing16)[4]<-"pop"
+
+popMissing12$year<-2012
+popMissing13$year<-2013
+popMissing14$year<-2014
+popMissing15$year<-2015
+popMissing16$year<-2016
+
+popMissing<-rbind(popMissing12,popMissing13,popMissing14,popMissing15,popMissing16)
+popMissing<-popMissing[,c("year","CT","sex","age","pop")]
+
+popMissing$pop[which(popMissing$pop<0)]<-0 #we imputed 0 in ages of areas where there were 0, another option is to impute the 2011 estimates
+
+popMissings<-rbind(popMissing,pop58.final)
+
+save(popMissings, file="R:/working/preparing data/PopulationData/popMissings.RDATA")
+
+```
+
+
+#linearly interpolate
+
+```{r}
+#1990-1996
+pop9691<-cbind(pop96, pop91)
+pop9691<-pop9691[,c(1,2,3,4,8)]
+diff9691<-(pop9691$pop96-pop9691$pop91)/5
+
+pop9691$pop90<-pop9691$pop91 ##left at population at 1991
+pop9691$pop92<-pop9691$pop91+diff9691
+pop9691$pop93<-pop9691$pop92+diff9691
+pop9691$pop94<-pop9691$pop93+diff9691
+pop9691$pop95<-pop9691$pop94+diff9691
+
+pop90<-pop9691[,c("CT","sex","age","pop90")]
+pop92<-pop9691[,c("CT","sex","age","pop92")]
+pop93<-pop9691[,c("CT","sex","age","pop93")]
+pop94<-pop9691[,c("CT","sex","age","pop94")]
+pop95<-pop9691[,c("CT","sex","age","pop95")]
+
+#1996-2001
+pop0196<-cbind(pop01,pop96)
+pop0196<-pop0196[,c(1,2,3,4,8)]
+diff0196<-(pop0196$pop01-pop0196$pop96)/5
+
+pop0196$pop97<-pop0196$pop96+diff0196
+pop0196$pop98<-pop0196$pop97+diff0196
+pop0196$pop99<-pop0196$pop98+diff0196
+pop0196$pop00<-pop0196$pop99+diff0196
+
+pop97<-pop0196[,c("CT","sex","age","pop97")]
+pop98<-pop0196[,c("CT","sex","age","pop98")]
+pop99<-pop0196[,c("CT","sex","age","pop99")]
+pop00<-pop0196[,c("CT","sex","age","pop00")]
+
+#2001-2006
+pop0106<-cbind(pop01,pop06)
+pop0106<-pop0106[,c(1,2,3,4,8)]
+diff0601<-(pop0106$pop06-pop0106$pop01)/5
+
+pop0106$pop02<-pop0106$pop01+diff0601
+pop0106$pop03<-pop0106$pop02+diff0601
+pop0106$pop04<-pop0106$pop03+diff0601
+pop0106$pop05<-pop0106$pop04+diff0601
+
+pop02<-pop0106[,c("CT","sex","age","pop02")]
+pop03<-pop0106[,c("CT","sex","age","pop03")]
+pop04<-pop0106[,c("CT","sex","age","pop04")]
+pop05<-pop0106[,c("CT","sex","age","pop05")]
+
+#2006-2011
+pop0611<-cbind(pop06,pop11)
+pop0611<-pop0611[,c(1,2,3,4,8)]
+diff1106<-(pop0611$pop11-pop0611$pop06)/5
+
+pop0611$pop07<-pop0611$pop06+diff1106
+pop0611$pop08<-pop0611$pop07+diff1106
+pop0611$pop09<-pop0611$pop08+diff1106
+pop0611$pop10<-pop0611$pop09+diff1106
+
+pop07<-pop0611[,c("CT","sex","age","pop07")]
+pop08<-pop0611[,c("CT","sex","age","pop08")]
+pop09<-pop0611[,c("CT","sex","age","pop09")]
+pop10<-pop0611[,c("CT","sex","age","pop10")]
+
+#2011-2016
+pop1116<-cbind(pop16,pop11)
+pop1116<-pop1116[,c(1,2,3,4,8)]
+diff1611<-(pop1116$pop16-pop1116$pop11)/5
+
+pop1116$pop12<-pop1116$pop11+diff1611
+pop1116$pop13<-pop1116$pop12+diff1611
+pop1116$pop14<-pop1116$pop13+diff1611
+pop1116$pop15<-pop1116$pop14+diff1611
+
+pop12<-pop1116[,c("CT","sex","age","pop12")]
+pop13<-pop1116[,c("CT","sex","age","pop13")]
+pop14<-pop1116[,c("CT","sex","age","pop14")]
+pop15<-pop1116[,c("CT","sex","age","pop15")]
+
+rm(pop,pop0106,pop1116,pop0196,pop9691,pop0611,diff0196,diff0601,diff1106,diff1611,diff9691)
+
+```
+
+#Remove interpolated CTs removed from original dataset
+
+```{r}
+pop06<-subset(pop06, CT!=58)
+pop07<-subset(pop07, CT!=58)
+pop08<-subset(pop08, CT!=58)
+pop09<-subset(pop09, CT!=58)
+pop10<-subset(pop10, CT!=58)
+pop11<-subset(pop11, CT!=58 & CT!=161.07 & CT!=251.01 &  CT!=290.06 &  CT!=400.07 &  CT!=400.08)
+pop12<-subset(pop12, CT!=58 & CT!=161.07 & CT!=251.01 &  CT!=290.06 &  CT!=400.07 &  CT!=400.08)
+pop13<-subset(pop13, CT!=58 & CT!=161.07 & CT!=251.01 &  CT!=290.06 &  CT!=400.07 &  CT!=400.08)
+pop14<-subset(pop14, CT!=58 & CT!=161.07 & CT!=251.01 &  CT!=290.06 &  CT!=400.07 &  CT!=400.08)
+pop15<-subset(pop15, CT!=58 & CT!=161.07 & CT!=251.01 &  CT!=290.06 &  CT!=400.07 &  CT!=400.08)
+pop16<-subset(pop16, CT!=58 & CT!=161.07 & CT!=251.01 & CT!=290.06 &  CT!=400.07 &  CT!=400.08)
+```
+
+#Finalise columns, summarise, and save interpolate pop file
+
+```{r}
+
+
+pop<-lapply(ls(), get)
+colnames<-c("CT","sex","age", "pop")
+years<-list(2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999)
+
+pop<-lapply(pop, setNames, colnames)
+pop<-Map(cbind, pop, year=years)
+
+popTest<-do.call(rbind, lapply(pop, function(x) x[,1:5]))
+pop<-popTest[,c(5,1,2,3,4)]
+
+load("R:/working/preparing data/PopulationData/popMissings.RDATA")
+
+pop_final<-rbind(pop,popMissings)
+pop_final[is.na(pop_final)]<-0
+pop<-subset(pop_final,CT!=270 & CT>0)
+
+pop <-pop %>%
+    group_by(year,CT,sex,age) %>%
+    summarise(pop=mean(pop))
+
+popInfo <-pop %>%
+    group_by(year,CT,) %>%
+    tally() #double checking 36 age groups present in all years and CT combos
+
+pop<-pop %>%
+  arrange(CT)
+pop<-setDT(pop)
+
+save(pop, file="R:/working/preparing data/PopulationData/pop_interpolated.RDATA")
+```
+
+
+##Load merge file and merge popfiles as needed for shapefiles
+
+```{r}
+merge<-read.csv("R:/working/preparing data/Merge/merge_all12.csv", header=T)
+
+for (i in 1:nrow(merge)){
+  pop$CT[which(pop$CT==as.numeric(merge[i,1]))]<-as.numeric(merge[i,2])
+}
+
+pop <-pop %>%
+  group_by(CT,year,sex,age) %>%
+  summarise(pop=sum(pop)) %>%
+  mutate(pop=round(pop))
+
+pop<-pop %>%
+  group_by(CT)
+pop$CT<-as.numeric(as.factor(pop$CT))
+pop$CT<-(pop$CT-1)
+pop$CT<-as.integer(pop$CT)
+pop<-setDT(pop)
+length(unique(pop$CT))
+
+#Finalise and save pop file
+
+save(pop, file="R:/working/modeling/pop_files/pop_new_368CTs.RData")
+
+```
+

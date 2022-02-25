@@ -1,0 +1,687 @@
+---
+title: "MergeCTs"
+output: html_document
+---
+
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                                         
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                                                                                                          
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries and import data                                                 
+             (B) Find which CTs have deaths less than 1 for each CT-year      
+             (C) Merge CTs that have less than one death and greater than 0                      
+             (D) Find out which CTs have pop less than 150 per census year 
+             (E) Combine CT lists and ensure no duplicates 
+             (F) Merge and separate CTs 
+             (G) Find CTs with mx in the last age group that is less than 0.06 to merge
+             (H) Combine CT lists and ensure no duplicates
+             
+#Load libraries and import data
+
+```{r}
+libs<-c("car","data.table", "dplyr")
+lapply(libs, require, character.only=TRUE)
+load("R:/working/preparing data/PopulationData/pop_interpolated.RDATA")
+load("R:/working/modeling/deaths/old/deaths_cwapplied.RData")
+deaths<-subset(deaths, CT!=270)
+
+
+
+```
+
+##Find which CTs have deaths less than 1 for each CT-year
+
+```{r}
+deaths<-subset(deaths, CT!=270)
+
+deathInfo <- deaths %>%
+  group_by(year,CT) %>%
+  summarise(deaths=sum(death))
+
+merge<-subset(deathInfo, deaths<=1 & year<2001)
+merge<- merge %>%
+  group_by(CT)%>%
+  summarise()
+names(merge)<-"ctuid_t"
+
+CTs<-merge
+
+crosswalk91<-read.csv(file="R:/working/preparing data/prepareCrosswalk/prepared/crosswalk91.csv", header=TRUE)
+
+crosswalk91<-select(crosswalk91,2,3)
+crosswalk91b<-select(crosswalk91, 2) #isolate target CTs to know which 2016 cts to merge back to
+merge2<-setdiff(crosswalk91b,merge)
+crosswalk91b<-left_join(merge2,crosswalk91)
+names(crosswalk91b)[1]<-"ctuid_t2"
+
+
+merge<-merge(merge,crosswalk91,by="ctuid_t")
+merge<-left_join(merge,crosswalk91b,by="ctuid_s")
+names(merge)[3]<-"CT"
+merge<-within(merge, CT[is.na(CT)]<-ctuid_t[is.na(CT)])
+
+deathInfo<-deathInfo %>%
+  group_by(CT) %>%
+  summarise(deaths=sum(deaths))
+deathInfo2<-select(deathInfo,"CT","deaths")
+merge<-left_join(merge,deathInfo2, by="CT")
+
+merge$choice<-0
+CTs$choice<-0
+
+#Make a decision of CT based on the one with smallest population
+for (i in 1:nrow(CTs)){
+  x<-which(merge$ctuid_t==CTs$ctuid_t[i])
+  y<-min(merge$deaths[x])
+  merge$choice[x]<-merge$CT[which(merge$deaths==y)]
+  CTs$choice[i]<-merge$CT[which(merge$deaths==y)]
+}
+
+mergeDeaths<-merge
+merge2<-CTs
+
+names(merge2)<-c("outliersremove","outliersmerge")
+
+write.csv(merge2, file="R:/working/preparing data/merge/mergeDeathList.csv", row.names = FALSE)
+
+```
+
+##Merge CTs that have less than one death and greater than 0 - merge with neighbour CT with more deaths 
+
+```{r}
+load("R:/working/modeling/deaths/old/deaths_cwapplied.RData")
+deaths<-subset(deaths, CT!=270)
+
+deathInfo <- deaths %>%
+  group_by(year,CT) %>%
+  summarise(deaths=sum(death))
+
+merge<-subset(deathInfo, deaths<1)
+merge<- merge %>%
+  group_by(CT)%>%
+  summarise()
+names(merge)<-"outliersremove"
+
+CTs<-unique(merge)
+
+
+#Load shapefile and find polygon association
+library(sf)
+load("R:/working/modeling/shape_files/shape_478CTs.RData")
+library("spdep")
+#find neighbours
+shape<-st_read("R:/working/preparing data/ShapeFiles/2016MetroVanCTs.shp")
+CT<-data.frame(CT=shape$CTNAME,area=1:478)
+CT$CT<-as.numeric(as.character(CT$CT))
+
+#look for CTs that need another CT to merge with because it's original CT
+merge<-merge %>%
+  rename(CT=outliersremove) %>%
+  left_join(CT,by="CT") %>%
+  select("area")
+
+#Find neighbours
+NB <- poly2nb(shape, queen=FALSE, row.names=shape$CTNAME)
+
+subsetList<-function(NB, elementNames) {
+  lapply(elementNames, FUN=function(x) CT$CT[NB[[x]]])
+}
+
+#Create list of CTs that are neighbours to ones of interest
+for (i in merge){
+NB2<-subsetList(NB, c(i))
+}
+
+load("R:/working/modeling/deaths/old/deaths_cwapplied.RData")
+#Create death file of interest
+deathInfo <- deaths %>%
+  group_by(CT,sex) %>%
+  summarise(deaths=sum(death)) %>%
+  filter(sex==2) %>%
+  rename(x=CT)
+
+#Link neighbourhood file with death data to identify CT neighbours with more deaths
+NB3<-lapply(NB2, function(x) merge(x, deathInfo, by="x"))
+new.names<-c("CT","sex", "deaths")
+NB4<-lapply(NB3, setNames, new.names)  
+NB5<-lapply(NB4, function(x) subset(x, deaths==min(deaths)))
+library(purrr)
+NB6<-map(NB5, ~(.x %>% select(CT)))
+deathCTchoice<-do.call(rbind.data.frame, NB6)
+
+#link CTs to merge from neighbour list
+merge2<-CTs %>%
+  cbind(deathCTchoice) %>%
+  rename(outliersmerge=CT)
+
+write.csv(merge2, file="R:/working/preparing data/merge/mergeDeathList.csv", row.names = FALSE)
+
+
+```
+
+
+##Find out which CTs have pop less than 150 per census year and merge with original CT
+
+```{r}
+
+load("R:/working/preparing data/PopulationData/pop_interpolated.RDATA")
+popInfo <- pop %>%
+  group_by(year,CT,sex) %>%
+  summarise(pop=sum(pop))
+
+#Identify CTs with pop less than 150
+merge<-subset(popInfo, pop<=300)
+merge<- merge %>%
+  group_by(CT)%>%
+  summarise()
+names(merge)<-"ctuid_t"
+
+CTs<-merge
+
+#load crosswalk to isolate CTs to know which 2016 CTs to merge back to (ideally original CT)
+crosswalk91<-read.csv(file="R:/working/preparing data/prepareCrosswalk/prepared/crosswalk91.csv", header=TRUE)
+crosswalk91<-crosswalk91 %>%
+  select(2,3)
+crosswalk91b<-select(crosswalk91, 2) #isolate target CTs to know which 2016 cts to merge back to
+merge2<-setdiff(crosswalk91b,merge)
+crosswalk91b<-left_join(merge2,crosswalk91)
+names(crosswalk91b)[1]<-"ctuid_t2"
+
+#Create CT column identify which CT to merge to
+merge<-merge(merge,crosswalk91,by="ctuid_t")
+merge<-left_join(merge,crosswalk91b,by="ctuid_s")
+names(merge)[3]<-"CT"
+merge<-within(merge, CT[is.na(CT)]<-ctuid_t[is.na(CT)]) #If no CT to merge to because it's the original CT, then replace to original CT
+
+#Merge with 1991 population to know which CTs to merge with (try to merge with CT neighbour with less population)
+popInfo<-subset(popInfo, year==1991)
+popInfo2<-select(popInfo,"CT","pop")
+merge<-left_join(merge,popInfo2, by="CT")
+merge<-select(merge,-"year")
+
+#Create choice column for decision making
+merge$choice<-0
+CTs$choice<-0
+
+#Make a decision of CT based on the one with smallest population
+for (i in 1:nrow(CTs)){
+  x<-which(merge$ctuid_t==CTs$ctuid_t[i])
+  y<-min(merge$pop[x])
+  merge$choice[x]<-merge$CT[which(merge$pop==y)]
+  CTs$choice[i]<-merge$CT[which(merge$pop==y)]
+}
+
+merge2<-merge
+merge<-CTs
+
+names(merge)<-c("outliersremove","outliersmerge")
+
+write.csv(merge, file="R:/working/preparing data/Merge/merge.csv", row.names = FALSE) 
+
+```
+
+#Combine CT lists and ensure no duplicates 
+
+```{r}
+
+merge<-read.csv("R:/working/preparing data/Merge/merge.csv", header=T)
+merge2<-read.csv("R:/working/preparing data/Merge/mergeDeathList.csv", header=T)
+
+uniqueCTs<-function(df,df2) {
+  df1.1<-df %>%
+    select(1)
+  df2.1<-df2 %>%
+    select(1) 
+  same.1<-intersect(df1.1,df2.1) #same outliersmerge
+  
+  df1.2<-df %>%
+    select(2)
+  df2.2<-df2 %>%
+    select(2)
+  names(df1.1)<-"outliersmerge"
+  same.2<-intersect(df1.1,df2.2) #outliersmerge in df2 that is similar to df1
+
+  same.3<-intersect(df1.1,df1.2) #outliersmerge in df1 that is similar to outliersremove in df2
+  
+  names(df2.1)<-"outliersmerge"
+  same.4<-intersect(df2.1, df2.2) #outliersmerge in df2 that is similar to outliersremove in df2
+  
+  same.5<-intersect(df2.1, df1.2) #outliersmerge in df2 that is similar to outliersremove in df2
+
+  return(list(same.1,same.2,same.3,same.4,same.5)) 
+}
+
+checkSame<-uniqueCTs(merge,merge2)
+
+#remove outliersremove that are same for pop and deaths - choose pop ones
+merge3<-merge2 %>%
+  filter(!outliersremove %in% checkSame[[1]][["outliersremove"]])
+
+checkSame<-uniqueCTs(merge,merge3)
+
+#look for CTs that need to swap in second df
+merge4<-merge3 %>%
+  filter(outliersmerge %in% checkSame[[2]][["outliersmerge"]])
+names(merge4)<-c("outliersmerge","outliersremove")
+merge4<-select(merge4,2,1)
+
+#remove CTs that need to swap and then add new df created that's swapped
+merge3<-merge3 %>%
+  filter(!outliersmerge %in% checkSame[[2]][["outliersmerge"]])
+merge3<-rbind(merge3,merge4)
+rm(merge4)
+
+checkSame<-uniqueCTs(merge,merge3)
+
+#remove outliersremove that are same for pop and deaths - choose pop ones
+merge3<-merge3 %>%
+  filter(!outliersremove %in% checkSame[[1]][["outliersremove"]])
+
+checkSame<-uniqueCTs(merge,merge3)
+
+
+#manually remove from df1 first row that is merged with 251.02 and impute 251.01
+
+merge<-merge %>%
+  filter(!outliersremove %in% checkSame[[3]][["outliersmerge"]][1])
+
+for (i in checkSame[[3]][["outliersmerge"]][2]) {
+  merge$outliersmerge[which(merge$outliersremove==i)]<-checkSame[[3]][["outliersmerge"]][1]
+}
+
+checkSame<-uniqueCTs(merge,merge3)
+
+
+#Load shapefile and find polygon association
+library(sf)
+load("R:/working/modeling/shape_files/shape_478CTs.RData")
+library("spdep")
+#find neighbours
+shape<-st_read("R:/working/preparing data/ShapeFiles/2016MetroVanCTs.shp")
+CT<-data.frame(CT=shape$CTNAME,area=1:478)
+CT$CT<-as.numeric(as.character(CT$CT))
+
+#look for CTs that need another CT to merge with because it's original CT
+merge4<-merge3 %>%
+  filter(outliersmerge %in% checkSame[[4]][["outliersmerge"]]) %>%
+  select(1) %>%
+  rename(CT=outliersremove) %>%
+  left_join(CT,by="CT") %>%
+  select("area")
+
+#Find neighbours
+NB <- poly2nb(shape, queen=TRUE, row.names=shape$CTNAME)
+
+subsetList<-function(NB, elementNames) {
+  lapply(elementNames, FUN=function(x) CT$CT[NB[[x]]])
+}
+
+#Create list of CTs that are neighbours to ones of interest
+for (i in merge4){
+NB2<-subsetList(NB, c(i))
+}
+
+load("R:/working/modeling/deaths/old/deaths_cwapplied.RData")
+#Create death file of interest
+deathInfo <- deaths %>%
+  filter(year<2009) %>%
+  group_by(CT,sex) %>%
+  summarise(deaths=sum(death)) %>%
+  filter(sex==2) %>%
+  rename(x=CT)
+
+#Link neighbourhood file with death data to identify CT neighbours with more deaths
+NB3<-lapply(NB2, function(x) merge(x, deathInfo, by="x"))
+new.names<-c("CT","sex", "deaths")
+NB4<-lapply(NB3, setNames, new.names)  
+NB5<-lapply(NB4, function(x) subset(x, deaths==min(deaths)))
+library(purrr)
+NB6<-map(NB5, ~(.x %>% select(CT)))
+deathCTchoice<-do.call(rbind.data.frame, NB6)
+
+#identify CTs to merge from neighbour list
+merge4<-merge3 %>%
+  filter(outliersmerge %in% checkSame[[4]][["outliersmerge"]]) %>%
+  select(1) %>%
+  cbind(deathCTchoice) %>%
+  rename(outliersmerge=CT)
+
+merge3<-merge3 %>%
+  filter(!outliersremove %in% checkSame[[4]][["outliersmerge"]]) %>%
+  rbind(merge4)
+
+checkSame<-uniqueCTs(merge,merge3) 
+
+#look for CTs that need to swap in second df
+merge4<-merge3 %>%
+  filter(outliersremove %in% checkSame[[5]][["outliersmerge"]])
+names(merge4)<-c("outliersmerge","outliersremove")
+merge4<-select(merge4,2,1)
+
+#remove CTs that need to swap and then add new df created that's swapped
+merge3<-merge3 %>%
+  filter(!outliersremove %in% checkSame[[5]][["outliersmerge"]])
+merge3<-rbind(merge3,merge4)
+rm(merge4)
+
+checkSame<-uniqueCTs(merge,merge3)
+
+#look for CTs that need to swap in second df
+merge4<-merge3 %>%
+  filter(outliersremove %in% checkSame[[4]][["outliersmerge"]])
+names(merge4)<-c("outliersmerge","outliersremove")
+merge4<-select(merge4,2,1)
+
+#remove CTs that need to swap and then add new df created that's swapped
+merge3<-merge3 %>%
+  filter(!outliersremove %in% checkSame[[4]][["outliersmerge"]][1])
+merge3<-rbind(merge3,merge4)
+rm(merge4)
+
+#Remove one row that are the same but just swapped
+merge3<-merge3 %>%
+  filter(!outliersmerge %in% checkSame[[2]][["outliersmerge"]])
+
+checkSame<-uniqueCTs(merge,merge3) #reveals same problem, so we need to impute the outliersmerge numbers to outliersremove 
+
+
+merge_all<-rbind(merge,merge3)
+merge_all<-merge_all[order(merge_all$outliersremove),]
+
+for (i in checkSame[[5]][["outliersmerge"]]) {
+  merge_all$outliersmerge[which(merge_all$outliersmerge==i)]<-merge_all$outliersmerge[which(merge_all$outliersremove==i)]
+}
+
+
+
+checkSame<-intersect(merge_all$outliersremove,merge_all$outliersmerge) #last check
+length(unique(merge_all$outliersremove))#this should equal to same length of merge_all
+
+notUnique<-merge_all$outliersremove[which(duplicated(merge_all$outliersremove)==TRUE)]
+notUniqueRows<-which(duplicated(merge_all$outliersremove)==TRUE)
+
+merge_all<-merge_all %>%
+  filter(!row_number() %in% notUniqueRows)
+
+write.csv(merge_all, file="R:/working/preparing data/Merge/merge_all3.csv", row.names = F)
+
+```
+
+
+#Merge and separate CTs
+
+```{r}
+library(tidyverse)
+merge_all<-read.csv("R:/working/preparing data/Merge/merge_all3.csv", header=T)
+merge.all<-aggregate(outliersremove ~ outliersmerge, merge_all, paste, collapse = "; ")
+
+merge.split<-separate(merge.all, col=outliersremove, into=c("outliers1", "outliers2", "outliers3", "outliers4"), sep=";")
+
+merge.split<-separate(merge.all, col=outliersremove, into=c("outliers1", "outliers2", "outliers3", "outliers4","outliers5","outliers6","outliers7","outliers8"), sep=";")
+library(dplyr)
+merge.1<-merge.split %>%
+  select(2,1) %>%
+  na.omit() %>%
+  rename(outliersremove=outliers1)
+
+merge.2<-merge.split %>%
+  select(3,1) %>%
+  na.omit() %>%
+  rename(outliersremove=outliers2)
+
+merge.3<-merge.split %>%
+  select(4,1) %>%
+  na.omit() %>%
+  rename(outliersremove=outliers3)
+
+merge.4<-merge.split %>%
+  select(5,1) %>%
+  na.omit() %>%
+  rename(outliersremove=outliers4)
+
+merge.5<-merge.split %>%
+  select(6,1) %>%
+  na.omit() %>%
+  rename(outliersremove=outliers5)
+
+merge.6<-merge.split %>%
+  select(7,1) %>%
+  na.omit() %>%
+  rename(outliersremove=outliers6)
+
+merge.7<-merge.split %>%
+  select(8,1) %>%
+  na.omit() %>%
+  rename(outliersremove=outliers7)
+
+merge.8<-merge.split %>%
+  select(9,1) %>%
+  na.omit() %>%
+  rename(outliersremove=outliers8)
+
+  
+write.csv(merge.1, file="R:/working/preparing data/Merge/merge_1.csv", row.names=F) 
+write.csv(merge.2, file="R:/working/preparing data/Merge/merge_2.csv", row.names=F) 
+write.csv(merge.3, file="R:/working/preparing data/Merge/merge_3.csv", row.names=F) 
+write.csv(merge.4, file="R:/working/preparing data/Merge/merge_4.csv", row.names=F)
+write.csv(merge.5, file="R:/working/preparing data/Merge/merge_5.csv", row.names=F)
+write.csv(merge.6, file="R:/working/preparing data/Merge/merge_6.csv", row.names=F)
+write.csv(merge.7, file="R:/working/preparing data/Merge/merge_7.csv", row.names=F)
+write.csv(merge.8, file="R:/working/preparing data/Merge/merge_8.csv", row.names=F)
+
+
+```
+
+
+#Find CTs with mx in the last age group that is less than 0.06 to merge
+
+```{r}
+#Need LE estimates from running last SAE models - 447 CTs
+
+load("R:/working/modeling/temp_dir/lt_est_1991.rdata")
+est1990<-est
+
+mxCheckF<- est1990 %>%
+  filter(age==85 & sex==2) %>%
+  select(area,mx_mean) %>%
+  group_by(area) %>%
+  summarise(mx_mean=mean(mx_mean)) 
+
+mxCheckM<- est1990 %>%
+  filter(age==85 & sex==1) %>%
+  select(area,mx_mean) %>%
+  group_by(area) %>%
+  summarise(mx_mean=mean(mx_mean)) 
+
+mergeF<-mxCheckF %>%
+  filter(mx_mean<0.06) %>%
+  select(area)
+
+mergeM<-mxCheckM %>%
+  filter(mx_mean<0.06) %>%
+  select(area)
+
+merge1990<-mergeF %>%
+  rbind(mergeM) %>%
+  unique()
+
+load("R:/working/modeling/temp_dir/lt_est_2016.rdata")
+est2016<-est
+
+mxCheckF<- est2016 %>%
+  filter(age==85 & sex==2) %>%
+  select(area,mx_mean) %>%
+  group_by(area) %>%
+  summarise(mx_mean=mean(mx_mean)) 
+
+mxCheckM<- est2016 %>%
+  filter(age==85 & sex==1) %>%
+  select(area,mx_mean) %>%
+  group_by(area) %>%
+  summarise(mx_mean=mean(mx_mean)) 
+
+mergeF<-mxCheckF %>%
+  filter(mx_mean<0.06) %>%
+  select(area)
+
+mergeM<-mxCheckM %>%
+  filter(mx_mean<0.06) %>%
+  select(area)
+
+merge2016<-mergeF %>%
+  rbind(mergeM) %>%
+  unique()
+
+#Load CTs to merge with areas of interest to merge
+
+load("R:/working/preparing data/CT369.RDATA")
+names(CT)<-c("area", "CT")
+
+mergeBoth<-merge1990 %>%
+  rbind(merge2016) %>%
+  unique() %>%
+  left_join(CT, by="area") %>%
+  select(CT) %>%
+  arrange(CT)
+
+#load shapefile to find neighbours to merge with
+load("R:/working/modeling/shape_files/shape-mapping369CTs.RData")
+library("sf")
+library("spdep")
+#find neighbours
+load("R:/working/preparing data/CT369.RDATA")
+names(CT)<-c("area", "CT")
+CT<-CT %>%
+  mutate(area=area+1)
+
+#look for CTs that need another CT to merge with because it's original CT
+merge<-mergeBoth %>%
+  left_join(CT,by="CT") %>%
+  select("area")
+
+#Find neighbours
+NB <- poly2nb(shape, queen=FALSE, row.names=shape$CTNAME)
+
+subsetList<-function(NB, elementNames) {
+  lapply(elementNames, FUN=function(x) CT$CT[NB[[x]]])
+}
+
+#Create list of CTs that are neighbours to ones of interest
+for (i in merge){
+NB2<-subsetList(NB, c(i))
+}
+
+#Find CTs with low or high mortality rates in the last age group to merge with
+load("R:/working/modeling/temp_dir/lt_est_2016.rdata")
+est1990<-est
+
+load("R:/working/preparing data/CT373.RDATA")
+names(CT)<-c("area", "CT")
+mxCheckF<- est1990 %>%
+  filter(age==85 & sex==2) %>%
+  left_join(CT) %>%
+  select(CT,mx_mean) %>%
+  group_by(CT) %>%
+  summarise(mx_mean=mean(mx_mean)) %>%
+  rename(x=CT)
+
+#Link neighbourhood file with death data to identify CT neighbours with more deaths
+NB3<-lapply(NB2, function(x) merge(x, mxCheckF, by="x"))
+new.names<-c("CT","mx_mean")
+NB4<-lapply(NB3, setNames, new.names)  
+  
+NB4[[6]][["mx_mean"]][which(NB4[[6]][["CT"]]==150)]<-0
+NB4[[9]][["mx_mean"]][which(NB4[[9]][["CT"]]==192)]<-0
+NB4[[17]][["mx_mean"]][which(NB4[[17]][["CT"]]==501.01)]<-0
+
+
+NB5<-lapply(NB4, function(x) subset(x, mx_mean==max(mx_mean))) #max mx
+library(purrr)
+NB6<-map(NB5, ~(.x %>% select(CT)))
+MXCTchoice<-do.call(rbind.data.frame, NB6)
+
+#link CTs to merge from neighbour list
+merge6<-mergeBoth %>%
+  rename(outliersremove=CT) %>%
+  cbind(MXCTchoice) %>%
+  rename(outliersmerge=CT)
+
+#manually take out airport CT (150) from outliersmerge
+merge6$outliersmerge[which(merge6$outliersremove==149.07)]<-149.08
+
+#remove link to 501.01
+
+write.csv(merge6, file="R:/working/preparing data/Merge/lowMXCts_3.csv", row.names=F)
+```
+
+#Combine CT lists and ensure no duplicates 
+
+```{r}
+
+merge<-read.csv("R:/working/preparing data/Merge/merge_all7.csv", header=T)
+merge2<-read.csv("R:/working/preparing data/Merge/lowMXCts_3.csv", header=T)
+
+uniqueCTs<-function(df,df2) {
+  df1.1<-df %>%
+    select(1)
+  df2.1<-df2 %>%
+    select(1) 
+  same.1<-intersect(df1.1,df2.1) #same outliersmerge
+  
+  df1.2<-df %>%
+    select(2)
+  df2.2<-df2 %>%
+    select(2)
+  names(df1.1)<-"outliersmerge"
+  same.2<-intersect(df1.1,df2.2) #outliersmerge in df2 that is similar to df1
+
+  same.3<-intersect(df1.1,df1.2) #outliersmerge in df1 that is similar to outliersremove in df2
+  
+  names(df2.1)<-"outliersmerge"
+  same.4<-intersect(df2.1, df2.2) #outliersmerge in df2 that is similar to outliersremove in df2
+  
+  same.5<-intersect(df2.1, df1.2) #outliersremove in df2 that is similar to outliersmerge in df1
+
+  return(list(same.1,same.2,same.3,same.4,same.5)) 
+}
+
+checkSame<-uniqueCTs(merge,merge2)
+
+#look for CTs that need to swap in second df
+merge4<-merge2 %>%
+  filter(outliersremove %in% checkSame[[4]][["outliersmerge"]])
+names(merge4)<-c("outliersmerge","outliersremove")
+merge4<-select(merge4,2,1)
+
+#remove CTs that need to swap and then add new df created that's swapped
+merge3<-merge2 %>%
+  filter(!outliersremove %in% checkSame[[4]][["outliersmerge"]])
+merge3<-rbind(merge3,merge4)
+rm(merge4)
+
+checkSame<-uniqueCTs(merge,merge3)
+
+#change first merge list in outliersmerge to match second merge list
+
+merge3<-merge2
+
+for (i in checkSame[[5]][["outliersmerge"]]) {
+  merge$outliersmerge[which(merge$outliersmerge==i)]<-merge3$outliersmerge[which(merge3$outliersremove==i)]
+}
+
+checkSame<-uniqueCTs(merge,merge3)
+
+
+merge_all<-rbind(merge,merge3)
+merge_all<-merge_all[order(merge_all$outliersremove),]
+
+checkSame<-intersect(merge_all$outliersremove,merge_all$outliersmerge) #last check
+length(unique(merge_all$outliersremove))#this should equal to same length of merge_all
+
+write.csv(merge_all, file="R:/working/preparing data/Merge/merge_all10.csv", row.names = F)
+
+```

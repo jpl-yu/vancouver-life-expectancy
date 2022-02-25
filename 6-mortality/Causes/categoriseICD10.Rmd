@@ -1,0 +1,86 @@
+---
+title: "categoriseICD10"
+output: html_document
+---
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                       
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries, import data, and define attributes                                                  
+             (B) Assess patterns of ICD codes and categorise death files back into GBD cause groups                                              
+
+             
+## Load libraries, import data, and define attributes        
+
+```{r}
+library(icd)
+library(tidyverse)
+load("R:/working/preparing data/DeathData/causes/deaths_icd10.Rdata")
+load("R:/working/preparing data/DeathData/causefiles.RData")
+load("R:/working/preparing data/DeathData/gbdcausesicd10.RData")
+causenames=substr(causefiles,1,nchar(causefiles)-4)
+```
+
+## Assess patterns of ICD codes and categorise death files back into GBD cause groups  
+
+```{r}
+#trial with just three characters
+trial<-sapply(gbdCausesicd10, function(x) ifelse(nchar(x)>3, substr(x,1,nchar(x)-1), x))
+deaths_icd10$code<-ifelse(nchar(deaths_icd10$ICD10)>3, substr(deaths_icd10$ICD10,1,nchar(deaths_icd10$ICD10)-1), deaths_icd10$ICD10)
+
+deaths_icd10<-subset(deaths_icd10, select = -c(icdversn, causeidgarb))
+
+deaths_icd10$newcause<-0
+for (y in causenames) {
+  deaths_icd10$newcause[which(deaths_icd10$code %in% trial[[y]])] <- y
+}
+
+deaths_icd10$cause<-0
+deaths_icd10$cause<-ifelse(deaths_icd10$causeid==0, deaths_icd10$newcause, deaths_icd10$causeid)
+
+#Next trial with just two characters
+trial2<-sapply(gbdCausesicd10, function(x) ifelse(nchar(x)>2, substr(x,1,nchar(x)-2), x))
+trial2<-sapply(trial2, function(x) ifelse(nchar(x)<2,NA, x))
+deaths_icd10$code2<-ifelse(nchar(deaths_icd10$ICD10)>3, substr(deaths_icd10$ICD10,1,nchar(deaths_icd10$ICD10)-2), deaths_icd10$ICD10)
+deaths_icd10$code2<-ifelse(nchar(deaths_icd10$code2)>2, substr(deaths_icd10$code2,1,nchar(deaths_icd10$code2)-1), deaths_icd10$code2)
+
+deaths_icd10$newcause2<-0
+for (y in causenames) {
+  deaths_icd10$newcause2[which(deaths_icd10$code2 %in% trial2[[y]])] <- y
+}
+deaths_icd10$causes<-0
+deaths_icd10$causes<-ifelse(deaths_icd10$cause==0, deaths_icd10$newcause2, deaths_icd10$cause)
+
+save(deaths_icd10, file="R:/working/preparing data/DeathData/garbagecodes/deaths_icd10.RDATA")
+
+#Tally up
+deathsbyCause10<-deaths_icd10 %>%
+  group_by(newcause) %>%
+  tally()
+
+deathsbyCauseFinal<-deaths_icd10 %>%
+  group_by(causes) %>%
+  tally()
+
+#Isolate causes with no causes identified
+noCauses<-subset(deaths_icd10, causes==0)
+noCauses<-select(noCauses,1:5)
+colnames(noCauses)[5]<-"code"
+noCauses<-left_join(noCauses, icd10cm2019, by="code")
+
+noCauseTally<-noCauses %>%
+  group_by(major) %>%
+  tally()
+
+deathsbyCauses10final<-select(deaths_icd10, year, CT, sex, age, causes)
+
+save(deathsbyCauses10final, file="R:/working/preparing data/DeathData/garbagecodes/icd10/deathsbyCauseICD10.RDATA")
+save(deathsbyCauseFinal, file="R:/working/preparing data/DeathData/garbagecodes/deathsbyCause10.RDATA")
+save(noCauses, file="R:/working/preparing data/DeathData/garbagecodes/noCauses.RDATA")
+save(noCauseTally, file="R:/working/preparing data/DeathData/garbagecodes/noCauseICD10Tally.RDATA")
+```
+

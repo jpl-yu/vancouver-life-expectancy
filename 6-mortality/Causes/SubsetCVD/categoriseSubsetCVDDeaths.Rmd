@@ -1,0 +1,61 @@
+---
+title: "categoriseSubsetCVDDeaths"
+output: html_document
+---
+
+  Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                       
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load the relevant libraries and import data                                                  
+             (B) Derive causes using ICD codes
+             (C) Count number of deaths and save file
+
+
+## Load the relevant libraries and import data   
+
+```{r}
+library("dplyr")
+library("tidyr")
+library("data.table")
+
+load("R:/working/preparing data/DeathData/subsetcvd/icd10/deathsbyCauseICD10.RDATA")
+load("R:/working/preparing data/DeathData/subsetcvd/icd9/deathsbyCausesICD9_final.RDATA")
+deaths<-rbind(deathsbyCauses9final,deathsbyCauses10final)
+
+```
+
+
+## Derive causes using ICD codes
+
+```{r}
+deaths$cause<-trimws(deaths$cause)
+
+deaths_ischemic<- deaths %>% filter(cause=="ischemic")
+deaths_stroke<- deaths %>% filter(cause=="stroke")
+
+
+deaths<-deaths_ischemic
+
+```
+
+
+## Count number of deaths and save file
+
+```{r}
+#Count number of deaths
+mortcounts<-count(deaths, year, CT, sex, age)
+colnames(mortcounts)[colnames(mortcounts)=="n"]<-"death"
+
+#sort data by sequentially of CT
+deaths<-mortcounts[order(mortcounts$CT),]
+
+
+save(deaths, file="R:/working/preparing data/DeathData/causes/subset/deaths_subset.rdata")
+
+```
+

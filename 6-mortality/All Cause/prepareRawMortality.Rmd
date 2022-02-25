@@ -1,0 +1,128 @@
+---
+title: "prepareRawMortality"
+output: html_document
+---
+
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                      
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load the relevant libraries and import data                                                  
+             (B) Create a function that imports mortality dataset and labels the columns
+             (C) Loop the import function for all years of data
+             (D) Change data from list to data frame
+             (E) Keep only PC_CT that are in Vancouver CMA and then remove the first 5 numbers
+             (F) Include only CTs and variables of interest and save file
+
+## Load the relevant libraries and import data
+
+```{r}
+library("dplyr")
+library("tidyr")
+library("stringr")
+load(file="R:/working/preparing data/CT2011.Rdata")
+load(file="R:/working/preparing data/DeathData/df_dataYear.Rdata")
+CT2011<-as.matrix(CT2011)
+van<-59933
+```
+
+## Create a function that imports mortality dataset and labels the columns
+
+```{r}
+import <-function(p,filename){
+  setwd("R:")
+  filepath = paste(p,filename,sep="")
+  dat <-read.fwf(file=filepath,fill=TRUE,widths=c(8,4,2,50,3,1,1,1,1,4,2,3,1,50,25,50,3,1,2,5,100,4,2,10,10,12,12,1)) 
+  colnames(dat) <-c("REGDT","DEATHDTCCYY","DEATHDTMM","DEATHCITY","DEATHPC_3","SEX","MARITAL","NATIVE","ONRESERVE","BIRTHDTCCYY","BIRTHDTMM","AGE","AGEUNITS","BIRTHCITY","OCCUPATION","CITY","PC_3","OTHER_INFO","ICD_VERSN","CAUSE","AXIS_CODES","DATAYR","VERSION","SEQNO","STUDYID","DEATHPC_6_CT","PC_CT","LINEFEED")
+
+  dat<<-dat
+  }
+
+```
+
+## Loop the import function for all years of data
+
+```{r}
+p <- "/DATA/2018-09-25/deaths/"
+dataFiles<-list.files(path="/DATA/2018-09-25/deaths/",pattern=".B.dat.gz")
+
+dataYear<-list()
+for (x in c(1:length(dataFiles))) {
+  dataYear[[x]] <- import(p,dataFiles[x])
+}
+```
+
+## Change data from list to data frame
+
+```{r}
+df_dataYear <- as.data.frame(dataYear[[1]])
+for (x in c(2:length(dataYear))) {
+  df_dataYear <- rbind(df_dataYear, as.data.frame(dataYear[[x]]))
+}
+```
+
+## Keep only PC_CT that are in Vancouver CMA and then remove the first 5 numbers
+
+```{r}
+cities<-c("VANCOUVER", "BURNABY","`WEST VANCOUVER`","`NORTH VANCOUVER`", "BELCARRA", "ANMORE", "`PORT MOODY`", "COQUITLAM", "`PORT COQUITLAM`", "`NEW WESTMINSTER`", "`PITT MEADOWS`", "RICHMOND", "DELTA", "SURREY", "TSAWWASSEN", "`WHITE ROCK`", "LANGLEY","`MAPLE RIDGE`","`BOWEN ISLAND`","`LIONS BAY`")
+
+DF<-subset(df_dataYear, grepl(van, DEATHPC_6_CT))
+DF$CITY<-trimws(DF$CITY)
+DF2<- DF[DF$CITY %in% cities,] #236609-all data with death CT infor AND city information within Metro Van 
+
+DF3<-subset(df_dataYear, grepl(van, PC_CT)) 
+DF3$CITY<-trimws(DF3$CITY)
+deathPCCTs <-transform(DF3, CT = ifelse(!is.na(PC_CT), PC_CT, 0.00))#350982- all data with residence CT in Metro Van
+
+DF4<- DF3[DF3$CITY %in% cities,] #266789 - data with residence CT info in Metro Van AND city information
+
+df_dataYear$CITY<-trimws(df_dataYear$CITY)
+DF5<- df_dataYear[df_dataYear$CITY %in% cities,] #267508-all data with city information in cities of Metro Van
+DF8<-setdiff(x=DF5, y=DF4) #719 deaths with city info but no PC_PCT info
+DF9<-setdiff(x=DF8, y=DF2) ######262 Deaths without any PC_CT or DEATH_PC_CT but have right city
+
+
+DF6<-setdiff(x=DF2, y=DF3) #457-Right DeathCTs and Cities but not PC_CTs
+missDeathCTs <-transform(DF6, CT = ifelse(!is.na(DEATHPC_6_CT), DEATHPC_6_CT, 0.00)) #457 death files without PC_CT but does have right city - so we include
+
+
+DF10<-setdiff(x=DF, y=DF3) #14674 all deaths with death PC info but no or incorrect city or residence info
+DF10$CITY<-trimws(DF10$CITY)
+DF10_blank<-subset(DF10, CITY=="")
+DF10_unknown<-subset(DF10, CITY=="UNKNOWN" | CITY=="UNKNOWN, UNKNOWN")
+
+DF_unknowns<-rbind(DF10_blank, DF10_unknown) #78 CTs with deaths in Van but no city info
+deathPCretrieved <-transform(DF_unknowns, CT = ifelse(!is.na(DEATHPC_6_CT), DEATHPC_6_CT, 0.00))
+
+deathsCityNoNA<-subset(DF5,!grepl(van,PC_CT) & !grepl(van,DEATHPC_6_CT)) 
+deathsCityNoNA <-transform(deathsCityNoNA, CT = ifelse(!is.na(PC_CT), PC_CT, 0.00))
+deathsCityNoNA<-subset(deathsCityNoNA, CT==0 | CT==590000000 | CT>599999999) #111 deaths with city info but incorrect PC_CT and death_CT - either NA or really high number
+deathsCityNoNA$CT<-str_sub(deathsCityNoNA$CT,6)
+deathsCityNoNA <-transform(deathsCityNoNA, CT = 600.00)
+
+
+
+DF_final<-rbind(deathPCCTs, missDeathCTs, deathPCretrieved)###Merged all data with residence info, death info in Van but no correct city info,and death files without residence but does have right city and death cT
+
+
+
+DF_final$CT<-str_sub(DF_final$CT,6)
+DF_final$CT<-as.numeric(as.character(DF_final$CT))
+all_data<-DF_final #351587 final death count 
+
+```
+
+
+## Include only CTs and variables of interest and save file
+
+```{r}
+deaths=all_data[all_data$CT %in% CT2011,]
+finalMortality <-select(deaths,CT,PC_CT,DEATHPC_6_CT,DEATHDTCCYY,DEATHDTMM,SEX,MARITAL,NATIVE,BIRTHDTCCYY,AGE,BIRTHCITY,OCCUPATION,ICD_VERSN,CAUSE,AXIS_CODES,STUDYID)
+
+write.csv(finalMortality, file="R:/working/preparing data/DeathData/final_mv_allyears.csv")
+```
+

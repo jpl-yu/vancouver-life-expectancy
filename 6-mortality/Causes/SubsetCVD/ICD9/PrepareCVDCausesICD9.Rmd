@@ -1,0 +1,103 @@
+---
+title: "PrepareCVDCauses_ICD9"
+output: html_document
+---
+
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                       
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries, import data, and define attributes                                                  
+             (B) Prepare ICD codes for 21 GBD causes                                              
+             
+## Load libraries, import data, and define attributes 
+
+```{r}
+library(stringr)
+library(abind)
+library(data.table)
+library(dplyr)
+library(stringi)
+dir<-"R:/working/preparing data/DeathData/subsetcvd/icd9/"
+setwd(dir)
+```
+
+## Prepare ICD codes for 21 GBD causes
+
+```{r}
+causefiles=(list.files(pattern="*.csv"))
+causefiles=setNames(causefiles, substr(list.files(pattern="*.csv"),1,nchar(causefiles)-4))
+allCauses<-lapply(causefiles,read.table,header=F,sep=",", stringsAsFactors=F)
+transposer<-function(df){
+  z<-t(df)
+}
+allCauses<-lapply(allCauses, transposer)
+
+#Applied to just ICD9 codes with just numbers
+causes2=function(x,output){
+  V1 = x[1]
+  V2 = word(V1,1,sep="\\-")
+  #gsub(".", ".0", V2, invert=)
+  V3 = sub("^.+-","", V1)
+  seq<-as.data.frame((t(seq(V2,V3, by=0.1))))
+  seq2<-seq[which(!stri_sub(as.character(seq),-2,-2)==".")]
+  seq2<-paste0(seq2, "0")
+  seq2<-seq2[which(!stri_sub(as.character(seq2),1,1)=="0")]
+  if ("0" %in% substr(as.character(V2), 1,1)) {
+  seq2 = sub("^","0", seq2)}
+  seq2<-matrix(unlist(seq2))
+}
+
+causes3=function(x,output){
+  V1 = x[1]
+  V2 = word(V1,1,sep="\\-")
+  V3 = sub("^.+-","", V1)
+  seq<-as.data.frame((t(seq(V2,V3, by=0.1))))
+  if ("0" %in% substr(as.character(V2), 1,1)) {
+  seq = sub("^","0", seq)}
+  final = gsub("\\.","",seq)
+}
+
+allCauses2<-do.call(rbind.data.frame, allCauses)
+allCauses3<-apply(allCauses2, 1, causes2)
+allCauses4<-apply(allCauses2, 1, causes3)
+allCauses5<-Map(c, allCauses3, allCauses4)
+
+
+
+  
+#Applied to just ICD codes with both letters and numbers
+causes=function(x,output){
+  V1 = x[1]
+  V2 = gsub("[A-Z]","", V1)
+  V3 = substring(V1,1,1)
+  V4 = word(V2,1,sep="\\-")
+  V5 = sub("^.+-","", V2)
+  seq<-as.data.frame((t(seq(V4,V5, by=0.1))))
+  final = sub("^",V3, seq)
+  final = gsub("\\.","",final)
+}
+
+
+gbdicd9<-list(allCauses5)
+gbdicd9<-unlist(gbdicd9, recursive=FALSE)
+
+gbdicd9.2<-list(gbdicd9[c(1)], gbdicd9[c(2:4)]) 
+
+causefiles=(list.files(pattern="*.csv"))
+gbdCauses2=setNames(gbdicd9.2, substr(causefiles,1,nchar(causefiles)-4))
+
+gbdCausesicd9<-lapply(gbdCauses2, rapply, f=c)
+
+#Execute if we want disease icd codes in dataframe
+#gbdAll9<-matrix(unlist(gbdCausesicd9))
+
+rm(allCauses, allCauses2, allCauses3, allCauses4, allCauses5, allCauses6, gbdCauses2, gbdicd9, gbdicd9.2, newCodes, newCodes2, causes, causes2, newnames, transposer)
+
+save(gbdCausesicd9, file="R:/working/preparing data/DeathData/icd9/cvdCausesicd9.RData")
+```
+

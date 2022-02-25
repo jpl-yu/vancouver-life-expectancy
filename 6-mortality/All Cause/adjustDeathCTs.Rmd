@@ -1,0 +1,61 @@
+---
+title: "adjustDeathCTs"
+output: html_document
+---
+
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                       
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries and import data                                                     
+             (B) Recode death files of interest and save adjusted deaths                                                              
+
+
+## Load libraries and import data
+
+```{r}
+libs<-c("data.table","dplyr", "tidyr")
+lapply(libs, require, character.only=TRUE)
+load("R:/working/modeling/deaths/deaths.RData")
+merge<-read.csv("R:/working/preparing data/Merge/merge_all12.csv", header=T)
+
+library(car)
+for (i in 1:nrow(merge)){
+  deaths$CT[which(deaths$CT==as.numeric(merge[i,1]))]<-as.numeric(merge[i,2])
+}
+detach("package:car", unload=TRUE)
+library(dplyr)
+```
+
+
+##Recode death files of interest and save adjusted deaths
+
+```{r}
+
+newDeaths <- deaths %>%
+  group_by(CT,year,sex,age) %>%
+  summarise(death=sum(death, na.rm=TRUE)) %>%
+  mutate(death=floor(death))
+newDeaths<-subset(newDeaths,CT!=270)
+
+
+deaths<-newDeaths[order(newDeaths$CT),]
+deaths$CT<-as.numeric(as.factor(deaths$CT))
+deaths$CT<-as.numeric(deaths$CT)
+deaths$CT<-(deaths$CT-1)
+
+deaths$sex<-as.integer(deaths$sex)
+deaths<-na.omit(deaths)
+deaths<-data.table::setDT(deaths)
+
+length(unique(deaths$CT))
+
+save(deaths, file="R:/working/modeling/deaths/deaths.RData")
+
+```
+
+

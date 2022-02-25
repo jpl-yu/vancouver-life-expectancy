@@ -1,0 +1,90 @@
+---
+title: "categoriseAllDeaths"
+output: html_document
+---
+
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                       
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load the relevant libraries and import data                                                  
+             (B) Categorise age groups
+             (C) Keep final columns and change variable types
+             (D) Count number of deaths and save file
+             (E) EXTRA: descriptive info
+
+## Load the relevant libraries
+
+```{r}
+library("dplyr")
+library("tidyr")
+library("data.table")
+library(readr)
+
+setwd("R:/working/preparing data/DeathData")
+allDeaths<-read.csv(file="final_mv_allyears_sensitivity5_excludeNonVan.csv", header=TRUE, check.names = FALSE)
+```
+
+## Categorise age groups
+
+```{r}
+#Categorise age groups and rename column names
+agebreaks <-c(0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,113)
+agelabels <-c("0","5","10","15","20","25","30","35","40","45","50","55","60","65","70","75","80","85")
+
+deaths<-setDT(allDeaths) [, agegroups := cut(AGE, breaks = agebreaks, right= FALSE, labels = agelabels)]
+
+```
+
+## Keep final columns and change variable types
+
+```{r}
+
+colnames(deaths)[colnames(deaths)=="DEATHDTCCYY"]<-"year"
+colnames(deaths)[colnames(deaths)=="agegroups"]<-"age"
+
+deaths$sex<-recode(deaths$SEX, 'F'=2, 'M'=1, 'U'=3)
+
+
+deaths$sex<-as.numeric(as.character(deaths$sex))
+deaths$age<-as.numeric(as.character(deaths$age))
+
+deaths <-dplyr::select(deaths,year,CT,sex,age)
+
+```
+
+## Count number of deaths and save file
+
+```{r}
+#Count number of deaths
+mortcounts<-count(deaths, year, CT, sex, age)
+colnames(mortcounts)[colnames(mortcounts)=="n"]<-"death"
+
+#sort data by sequentially of CT
+deaths<-mortcounts[order(mortcounts$CT),]
+
+setDT(deaths)
+write.csv(deaths, file="R:/working/preparing data/DeathData/years/allyears/allDeaths.csv")
+save(deaths, file="R:/working/preparing data/DeathData/years/final/deaths_restrict.RData")
+
+```
+
+
+##EXTRA: descriptive info
+
+```{r}
+deathTally<-deaths %>%
+  group_by(year) %>%
+  summarise(deaths=sum(death))
+
+#find death data with missing age information
+deathsAgeNA<-deaths[is.na(deaths$age),] #532
+deathsAgeNA<-deathsAgeNA %>%
+  #group_by(year) %>%
+  summarise(deaths=sum(death))
+```
+

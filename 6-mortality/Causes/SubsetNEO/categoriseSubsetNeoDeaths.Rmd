@@ -1,0 +1,111 @@
+---
+title: "categoriseSubsetNeoDeaths"
+output: html_document
+---
+
+  Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                       
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load the relevant libraries and import data                                                  
+             (B) Categorise age groups
+             (C) Keep final columns 
+             (D) Derive causes using ICD codes for NEOPLASMS
+             (E) Count number of deaths and save file
+             
+## Load the relevant libraries and import data
+
+```{r}
+library("dplyr")
+library("tidyr")
+library("data.table")
+
+setwd("R:/working/preparing data/DeathData")
+allDeaths<-read.csv(file="final_mv_allyears.csv", header=TRUE, check.names = FALSE)
+```
+
+
+## Categorise age groups
+
+```{r}
+#Categorise age groups and rename column names
+agebreaks <-c(0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,113)
+agelabels <-c("0","5","10","15","20","25","30","35","40","45","50","55","60","65","70","75","80","85")
+
+deaths<-setDT(allDeaths) [, agegroups := cut(AGE, breaks = agebreaks, right= FALSE, labels = agelabels)]
+
+```
+
+## Keep final columns and change variable types
+
+```{r}
+
+colnames(deaths)[colnames(deaths)=="DEATHDTCCYY"]<-"year"
+#colnames(deaths)[colnames(deaths)=="SEX"]<-"sex"
+colnames(deaths)[colnames(deaths)=="agegroups"]<-"age"
+colnames(deaths)[colnames(deaths)=="CAUSE"]<-"cause"
+colnames(deaths)[colnames(deaths)=="ICD_VERSN"]<-"icdversn"
+
+deaths <- deaths %>% select(year,CT,SEX,age,cause,icdversn) %>% mutate(sex=case_when(
+                             SEX =="F" ~ "2",
+                             SEX == "M"~ "1",
+                             SEX == "U" ~ "3",
+                             TRUE ~ "other"))
+
+deaths$sex<-as.numeric(as.character(deaths$sex))
+deaths$age<-as.numeric(as.character(deaths$age))
+
+deaths <-select(deaths,year,CT,sex,age,cause,icdversn)
+
+rm(allDeaths, agebreaks, agelabels)
+
+```
+
+
+#Derive causes using ICD codes for NEOPLASMS - ISCHEMIC and STROKE in another folder for categorisation
+
+```{r}
+deaths$cause<-trimws(deaths$cause)
+
+deaths<-deaths %>% mutate(causeid=
+                                 case_when(cause =="C349" | cause=="1629" ~ "lung",
+                                           cause =="C61" | cause=="185" ~ "prostate",
+                                           cause =="C189" | cause=="1539" ~ "colon",
+                                           cause =="C259" | cause=="1579" ~ "pancreas",
+                                           cause =="C159" | cause=="1509" ~ "esophagus",
+                                           cause =="C509" | cause=="1749" ~ "breast",
+                                           cause =="C56" | cause=="1830" ~ "ovary"                                           ))
+
+deaths_lung<- deaths %>% filter(causeid=="lung")
+deaths_prostate<- deaths %>% filter(causeid=="prostate")
+deaths_colon<- deaths %>% filter(causeid=="colon")
+deaths_pancreas<- deaths %>% filter(causeid=="pancreas")
+deaths_esophagus<- deaths %>% filter(causeid=="esophagus")
+deaths_breast<- deaths %>% filter(causeid=="breast")
+deaths_ovary<- deaths %>% filter(causeid=="ovary")
+
+
+deaths<-deaths_ovary
+
+```
+
+
+## Count number of deaths and save file
+
+```{r}
+#Count number of deaths
+mortcounts<-count(deaths, year, CT, sex, age)
+colnames(mortcounts)[colnames(mortcounts)=="n"]<-"death"
+
+#sort data by sequentially of CT
+deaths<-mortcounts[order(mortcounts$CT),]
+
+
+save(deaths, file="R:/working/preparing data/DeathData/causes/subset/deaths_subset.rdata")
+
+```
+

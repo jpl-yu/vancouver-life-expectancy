@@ -1,0 +1,62 @@
+---
+title: "categoriseAllDeaths"
+output: html_document
+---
+
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                       
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries, import data, and define attributes                                                   
+             (B) Loop the application of crosswalk files
+
+## Load libraries, import data, and define attributes
+
+```{r}
+library("dplyr")
+library("tidyr")
+library("data.table")
+
+rm(list=ls())
+load("R:/working/preparing data/DeathData/causefiles.RData")
+causenames=substr(causefiles,1,nchar(causefiles)-4)
+
+dir<-"R:/working/preparing data/DeathData/causes/deathfiles/"
+file<-"_deaths.RData"
+dir2<-"R:/working/preparing data/DeathData/causes/deathfiles/crosswalked/"
+```
+
+## Loop the application of crosswalk files
+
+```{r}
+
+for (i in 1:21) {
+  load(paste0(dir, causenames[i], file)) 
+  deaths <- deaths %>%
+    filter(year>1980) %>%
+    rename(ctuid_s=CT, death=deaths) 
+  
+  #import 2011 crosswalk file
+  crosswalk11<-read.csv(file="R:/working/preparing data/prepareCrosswalk/prepared/crosswalk11.csv", header=TRUE)
+
+  #Multiply 2011 death file with crosswalk table to obtain 2016 CT estimates
+  death2011<-merge(x=crosswalk11, y=deaths, by="ctuid_s", all.y=TRUE)
+  death2016 = death2011 %>% 
+    filter(ctuid_s>0) %>%
+    arrange(ctuid_s, year, sex, age) %>%
+    mutate(death2011 = w * death) 
+  deaths<-death2016 %>%
+    group_by(ctuid_t, year, sex, age) %>%
+    summarise(death2011 = sum(death2011, na.rm = T)) %>%
+    rename(CT=ctuid_t,death=death2011) %>%
+    arrange(year,CT,sex,age,death)
+  
+  save(deaths, file=paste0(dir2, causenames[17], file))
+}
+
+```
+

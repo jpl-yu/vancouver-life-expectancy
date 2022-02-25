@@ -1,0 +1,195 @@
+---
+title: "map_LE_ggplot"
+output: html_document
+---
+
+
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                       
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries, data, and define theme of map                                                     
+             (B) Define year, sex, and define map features                                                                
+             (C) Map the data and define colours, titles, and legends                                                                        
+
+
+#Load libraries, data, and define theme of map
+
+```{r}
+
+library(ggplot2)
+library(viridis)
+library(rgdal)
+library(raster)
+library(dplyr)
+
+dir<-"R:/working/modeling/temp_dir/plot"
+dir2<-"R:/working/preparing data/"
+dir3<-"R:/working/modeling/shape_files/shape-mapping"
+dir4<-"R:/working/results/"
+file<-".rdata"
+CTs<-368
+year<-c(2016)
+
+#Define the theme for the maps
+
+theme_map<-function(...) {
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Ubuntu Regular", color = "#22211d"),
+    axis.line = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+  panel.grid.major = element_line(color = "#ebebe5", size = 0.2),
+  panel.grid.minor = element_blank(),
+  plot.background = element_rect(fill = "#f5f5f2", color=NA),
+  panel.background = element_rect(fill = "#f5f5f2", color = NA),
+  legend.background = element_rect(fill = "#f5f5f2", color = NA),
+  panel.border= element_blank()
+  )
+}
+
+```
+
+#Define year, sex, and define map features
+
+```{r}
+#load LE data
+#temp for one:
+year<-2016
+Sex<-1
+title<-"Male"
+
+  load(paste0(dir,"/lt_est_", year, file)) #LOAD LE Estimates
+  load(paste0(dir2, "CT", CTs, file))#LOAD CT FILE
+  load(paste0(dir3, CTs, "CTs", file)) #LOAD CT MAP
+  shape<-spTransform(shape, crs("+init=epsg:26910"))
+  
+  PopCTs<-CT %>%
+    rename(CTNAME=CT)
+
+  #Prep LE
+  birth_all<-est %>%
+    filter(sex==Sex & age==0) %>%
+    select(area,ex_mean) %>%
+    rename(CTNAME = area) %>%
+    left_join(PopCTs, by="CTNAME") %>%
+    select(CTNAME,ex_mean)
+  
+  
+  #merge shapefiles with LE data
+  shapeEXP<-merge(x=shape, y=birth_all, by="CTNAME")
+  shapeEXP@data$id = rownames(shape@data)
+  shapeEXP$id<-as.numeric(as.character(shapeEXP$id))
+  
+  
+  #Prep and fortify shapefile
+  shape@data$id = rownames(shape@data)
+  shape_fortified<-fortify(shape, region = "id") %>%
+    mutate(id = as.numeric(id))
+  shape_data<- shape_fortified %>% left_join(shapeEXP@data, by="id")
+  
+  #define breaks
+  
+  breaks<-c(75,78,81,84,87,90)
+  min<-min(birth_all$ex_mean)
+  max<-max(birth_all$ex_mean)
+  
+
+  labels<-c()
+  brks<-c(min, breaks, max)
+  
+  for (i in 1:length(brks)) {
+    labels <-c(labels,round(brks[i + 1], 2))
+  }
+  labels<-labels[1:length(labels)-1]
+  
+  shape_data$brks<-cut(shape_data$ex_mean, 
+                    breaks=brks,
+                    labels=labels,
+                    include.lowest = TRUE)
+
+  brks_scale<-levels(shape_data$brks)
+  labels_scale<-c(paste0(""), 90, 87, 84, 81, 78, 75)
+
+```
+
+#Map the data and define colours, titles, and legends
+
+```{r}
+
+p<-ggplot() +
+  geom_polygon(data=shape_data, aes(fill=brks, 
+                                  x=long, 
+                                  y=lat, 
+                                  group=group)) + 
+  #municipality outline
+  geom_path(data = shape_data, aes (x = long,
+                               y = lat,
+                               group = group),
+            color = "#bababa", size = 0.001) +
+  coord_equal() +
+  theme_map() +
+  theme(
+    legend.position = "top",
+    legend.text.align = 0,
+    legend.background = element_rect(fill = alpha('white', 0.0)),
+    legend.text = element_text(size = 10, hjust = 0, color = "#4e4d47"),
+    plot.title = element_text(hjust = 0.5, color = "#4e4d47"),
+    plot.subtitle = element_text(hjust = 0.5, color = "#4e4d47",
+                                 margin = margin(b= -0.1,
+                                                 t = -0.1,
+                                                 l = 2,
+                                                 unit = "cm"),
+                                 debug = F),
+    legend.title = element_text(size = 10),
+    plot.margin = unit(c(.5,.5,.2,.5), "cm"),
+    panel.spacing = unit(c(-.1, 0.2,.2,0.2), "cm"),
+    panel.border=element_blank(),
+    plot.caption=element_text(size =9,
+                              hjust = 1,
+                              margin = margin(t=0,
+                                              b=0.2,
+                                              unit = "cm"),
+                              color = "#939184")
+  ) +
+  labs(x=NULL,
+       y=NULL,
+       title = paste0(year, " Census Tract ", title," Life Expectancy in Metro Vancouver"),
+       subtitle = "",
+       caption = "Data Source: Vital Statistics, Statistics Canada, PopData BC") 
+  #colourbar for discrete data
+final<-p +
+   scale_fill_manual(
+    values=rev(viridis(7)),
+    breaks = rev(brks_scale),
+    name = "Life expectancy at birth",
+    drop=F,
+    labels = labels_scale,
+    guide=guide_legend(
+      direction="horizontal",
+      keyheight = unit(3, units = "mm"),
+      keywidth = unit(80/length(labels), units = "mm"),
+      title.position="top",
+      title.hjust = 0.5,
+      label.hjust=1,
+      nrow=1,
+      byrow=T,
+      reverse = T,
+      label.position = "bottom"
+    )
+  )
+
+
+
+```
+
+
+

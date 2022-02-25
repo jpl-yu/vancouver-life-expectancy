@@ -1,0 +1,62 @@
+---
+title: "AdjacencyMatrix"
+output: html_document
+---
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca 
+               
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium 
+                     
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries and import data                                        
+             (B) Create adjacency matrix with contiguous neighbours   
+             (C) Plot adjacency matrix                                                                      
+
+## Load libraries and import data
+
+```{r}
+library("spdep")
+library("rgdal")
+library("Matrix")
+load("R:/working/modeling/shape_files/shape-mapping368CTs.RData")
+
+```
+
+## Create adjacency matrix with contiguous neighbours
+
+```{r}
+MV<-shape
+NB <- poly2nb(MV, queen=TRUE, row.names=MV$FIPSNO)
+#find any CTs that don't have neighbours
+noNeigh <- which(card(NB)==0)
+#find closest neighbour to any that has no bordering:
+nearNeigh <- knn2nb(knearneigh(coordinates(MV), k=1))
+
+
+CTs2016 <- nb2mat(NB, style="B", zero.policy=FALSE)
+#make Matrix symmetric
+CTs2016[lower.tri(CTs2016)] = t(CTs2016)[lower.tri(CTs2016)]
+#make rownames and colnames symmetric
+x <-CTs2016
+colnames(x)<-rownames(x)
+adjmat1<-Matrix(x, sparse=TRUE)
+adjmat<-as(adjmat1, "dgTMatrix")
+save(adjmat, file="R:/working/preparing data/AdjacencyMatrix/adjmat2016_368CTs.RData")
+```
+
+
+## Plot adjacency matrix
+
+```{r}
+library(igraph)
+
+adj<-graph.adjacency(adjmatrix = adjmat1, mode="undirected", weighted=TRUE, diag=FALSE)
+
+pdf("R:/working/preparing data/AdjacencyMatrix/adjmatrix.pdf", height=14, width=14)
+plot.igraph(adj, vertex.size=2, vertex.label.cex=.5)
+dev.off()
+```
+

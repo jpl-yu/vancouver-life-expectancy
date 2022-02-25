@@ -1,0 +1,218 @@
+---
+title: "ImputeMSD"
+output: html_document
+---
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                                         
+  Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                    
+                                                                                                         
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries and import file                                          
+             (B) Functions for imputing and finding means                       
+             (C) Merge material and social deprivation data                                     
+             (D) Subset individual years of data
+             (E) Finalise the MSD dataset and save file
+
+#load libraries and import file        
+             
+```{r}
+library(spdep)
+library(dplyr)
+msd<-read.csv("R:/working/preparing data/CovarData/msd_all.csv")
+
+```
+
+#functions for imputing and finding means
+
+```{r}
+impute<- function(data, score, yearchoice) {
+  load("R:/working/modeling/shape_files/shape_478CTs.RData")
+  load("R:/working/preparing data/CTIDS.RData")
+  names(CTIDs)<-c("area","CT")
+  CTIDs$CT<-as.numeric(as.character(CTIDs$CT))
+
+
+  NB <- poly2nb(shape, queen=TRUE, row.names=shape$CTNAME)
+
+  subsetList<-function(NB, elementNames) {
+    lapply(elementNames, FUN=function(x) CTIDs$CT[NB[[x]]])
+  }
+  
+  msd<-data %>%
+    select(CT,year,score,population) %>%
+    filter(year==yearchoice)
+  msdCT<-select(msd, CT)
+  
+  
+  missingMsdCT<-anti_join(CTIDs,msdCT, by="CT")
+  #names(missingMsdCT)<-c("CT","area")
+  missingMsdCT<-select(missingMsdCT, "area")
+  
+  for (i in missingMsdCT){ #include msdi CTs we want to merge
+  NB2<-subsetList(NB, c(i))
+  }
+  
+  msd<-msd %>%
+    select(CT,score) %>%
+    rename(x=CT)
+  
+  NB3<-lapply(NB2, function(x) merge(x, msd, by="x"))
+  new.names<-c("CT",score)
+  NB4<-lapply(NB3, setNames, new.names)  
+  return(NB4)
+}  
+
+
+
+findMean<-function(data2, data,yearchoice, score) {
+  load("R:/working/modeling/shape_files/shape_478CTs.RData")
+  load("R:/working/preparing data/CTIDS.RData")
+  names(CTIDs)<-c("area","CT")
+  CTIDs$CT<-as.numeric(as.character(CTIDs$CT))
+
+
+  NB <- poly2nb(shape, queen=TRUE, row.names=shape$CTNAME)
+
+  subsetList<-function(NB, elementNames) {
+    lapply(elementNames, FUN=function(x) CTIDs$CT[NB[[x]]])
+  }
+  
+  msd<-data2 %>%
+    select(CT,year,score,population) %>%
+    filter(year==yearchoice)
+  msdCT<-select(msd, CT)
+  
+  
+  missingMsdCT<-anti_join(CTIDs,msdCT, by="CT")
+  #names(missingMsdCT)<-c("CT","area")
+  missingMsdCT<-select(missingMsdCT, "area")
+  
+  NB4<-data
+  NB6<-lapply(NB4, function(x) x[1,])
+
+  NB7<-lapply(NB6, function(x) x["mean"])
+  print(NB7)
+  Scores<-do.call(rbind.data.frame, NB7)
+  names(Scores)<-score
+  
+  msdmeans<-missingMsdCT %>%
+    cbind(Scores) %>%
+    left_join(CTIDs, by="area") %>%
+    select(CT, score)
+  
+  return(msdmeans)
+ 
+}
+
+```
+
+#Merge material and social deprivation data  
+
+```{r}
+
+mergeMSD<-function(data, years) {
+
+  msd<-data
+  
+  msd.soc<-impute(msd,
+                      score = "SocScore",
+                      yearchoice = years)
+  
+  msd.soc<-lapply(msd.soc, function(x) transform(x, mean=mean(SocScore)))
+  
+  msd.soc<-findMean(data2=msd,
+                      data = msd.soc,
+                      score = "SocScore",
+                      yearchoice = years)
+  
+  msd.mat<-impute(msd,
+                      score = "MatScore",
+                      yearchoice = years)
+  
+  msd.mat<-lapply(msd.mat, function(x) transform(x, mean=mean(MatScore)))
+  
+  msd.mat<-findMean(data2=msd,
+                      data = msd.mat,
+                      score = "MatScore",
+                      yearchoice = years)
+  
+  msdMiss<-merge(msd.mat, msd.soc, by="CT")
+  
+  msdMiss$year<-rep(years)
+  
+  load("R:/working/preparing data/PopulationData/pop_interpolated.RDATA")
+  pops<-pop %>% filter(year==years) %>% group_by(CT) %>% mutate(population=sum(pop)) %>% select(CT,population) %>% unique()
+  
+  msdMiss<-msdMiss %>% left_join(pops, by="CT") %>% select(CT, year, MatScore, SocScore, population)
+  
+  return(msd<-msd %>% filter(year==years) %>% rbind(msdMiss))
+}
+
+
+```
+
+#Subset individual years of data
+
+```{r}
+rm(merge)
+
+msd1991<-mergeMSD(msd,
+                  years = 1991)
+
+msd1996<-mergeMSD(msd,
+                  years = 1996)
+
+msd2001<-mergeMSD(msd,
+                  years = 2001)
+
+msd2006<-mergeMSD(msd,
+                  years = 2006)
+
+msd2011<-mergeMSD(msd,
+                  years = 2011)
+
+msd2016<-mergeMSD(msd,
+                  years = 2016)
+
+msd<-rbind(msd1991,msd1996,msd2001,msd2006,msd2011,msd2016)
+
+save(msd, file="R:/working/preparing data/CovarData/msd_processed.RDATA")
+```
+
+#Finalise the MSD dataset and save file
+
+```{r}
+load("R:/working/preparing data/CovarData/msd_processed.RDATA")
+merge<-read.csv("R:/working/preparing data/Merge/merge_all12.csv", header=T)
+
+library(car)
+for (i in 1:nrow(merge)){
+  msd$CT[which(msd$CT==as.numeric(merge[i,1]))]<-as.numeric(merge[i,2])
+}
+detach("package:car", unload=TRUE)
+library(dplyr)
+
+newMSD <- msd %>%
+  group_by(CT,year) %>%
+  summarise(SocScore=mean(SocScore, na.rm=TRUE), MatScore=mean(MatScore, na.rm=TRUE)) 
+newMSD<-subset(newMSD,CT!=270)
+
+
+msd<-newMSD[order(newMSD$CT),]
+
+
+msd<-na.omit(msd)
+
+
+length(unique(msd$CT))
+
+save(msd, file="R:/working/preparing data/CovarData/msdcwed.RDATA")
+
+```
+
+
+

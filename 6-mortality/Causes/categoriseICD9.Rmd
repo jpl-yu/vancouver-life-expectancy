@@ -1,0 +1,156 @@
+---
+title: "CategoriseICD9"
+output: html_document
+---
+
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Population Data BC, BC Ministry of Health: https://www.popdata.bc.ca/                       
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries, import data, and define attributes                                           
+             (B) Assess patterns of ICD codes and categorise death files back into GBD cause groups           
+             (C) Create ICD9 list                                                                      
+
+
+## Load libraries, import data, and define attributes 
+
+```{r}
+library(icd)
+library(tidyverse)
+library(stringr)
+load("R:/working/preparing data/DeathData/causes/deaths_icd9.Rdata")
+load("R:/working/preparing data/DeathData/gbdcausesicd9.RData")
+load("R:/working/preparing data/DeathData/causefiles.RData")
+causenames=substr(causefiles,1,nchar(causefiles)-4)
+```
+
+## Assess patterns of ICD codes and categorise death files back into GBD cause groups
+
+```{r}
+#trial with just max four characters
+deaths_icd9$ICD9<-as.character(deaths_icd9$ICD9)
+deaths_icd9$ICD9<-gsub("(^\\s+)|(\\s+$)", "", deaths_icd9$ICD9)
+
+trial<-sapply(gbdCausesicd9, function(x) ifelse(nchar(x)>3, substr(x,1,nchar(x)-1), x))
+deaths_icd9$code<-0
+deaths_icd9$code<-ifelse(nchar(deaths_icd9$ICD9)>3, substr(deaths_icd9$ICD9,1,nchar(deaths_icd9$ICD9)-1), deaths_icd9$ICD9)
+
+#remove unnecessary columns
+deaths_icd9<-subset(deaths_icd9, select = -c(icdversn))
+
+deaths_icd9$newcause<-0
+for (y in causenames) {
+  deaths_icd9$newcause[which(deaths_icd9$code %in% trial[[y]])] <- y
+}
+
+deaths_icd9$trial<-0
+deaths_icd9$trial<-ifelse(deaths_icd9$causeid==0, deaths_icd9$newcause, deaths_icd9$causeid)
+
+#Tally up
+deathsbyCause9<-deaths_icd9 %>%
+  group_by(trial) %>%
+  tally()
+
+
+#Next trial with just max three characters
+trial2<-sapply(gbdCausesicd9, function(x) ifelse(nchar(x)>4, substr(x,1,nchar(x)-2), x))
+trial2<-sapply(trial2, function(x) ifelse(nchar(x)>3, substr(x,1,nchar(x)-1), x))
+
+trial2<-sapply(trial2, function(x) ifelse(nchar(x)<2,NA, x))
+deaths_icd9$code2<-ifelse(nchar(deaths_icd9$ICD9)>4, substr(deaths_icd9$ICD9,1,nchar(deaths_icd9$ICD9)-2), deaths_icd9$ICD9)
+deaths_icd9$code2<-ifelse(nchar(deaths_icd9$code2)>3, substr(deaths_icd9$code2,1,nchar(deaths_icd9$code2)-1), deaths_icd9$code2)
+
+deaths_icd9$newcause2<-0
+for (y in causenames) {
+  deaths_icd9$newcause2[which(deaths_icd9$code2 %in% trial2[[y]])] <- y
+}
+deaths_icd9$trial2<-0
+deaths_icd9$trial2<-ifelse(deaths_icd9$trial==0, deaths_icd9$newcause2, deaths_icd9$trial)
+
+deathsbyCause9<-deaths_icd9 %>%
+  group_by(trial2) %>%
+  tally()
+
+#Next trial with just max two characters
+trial3<-sapply(trial2, function(x) ifelse(nchar(x)>2, substr(x,1,nchar(x)-1), x))
+
+#remove certain codes that will be problematic because of duplicates in other disease lists
+#MSK
+duplicatesMSK<-c("41", "43", "44", "69")
+trial3[["msk"]]<-trial3[["msk"]][!(trial3[["msk"]] %in% duplicatesMSK)]
+#otherNCD
+duplicatesNCD<-c("55", "56")
+trial3[["otherncd"]]<-trial3[["otherncd"]][!(trial3[["otherncd"]] %in% duplicatesNCD)]
+duplicatesDIGEST<-c("78")
+trial3[["digest"]]<-trial3[["digest"]][!(trial3[["digest"]] %in% duplicatesDIGEST)]
+duplicatesDIAB<-c("77")
+trial3[["diab_ckd"]]<-trial3[["diab_ckd"]][!(trial3[["diab_ckd"]] %in% duplicatesDIAB)]
+duplicatesHIV<-c("54")
+trial3[["hiv_std"]]<-trial3[["hiv_std"]][!(trial3[["hiv_std"]] %in% duplicatesHIV)]
+duplicatesNEO<-c("56")
+trial3[["neo"]]<-trial3[["neo"]][!(trial3[["neo"]] %in% duplicatesNEO)]
+duplicatesNEURO<-c("77")
+trial3[["neuro"]]<-trial3[["neuro"]][!(trial3[["neuro"]] %in% duplicatesNEURO)]
+duplicatesNTD<-c("42")
+trial3[["ntd"]]<-trial3[["ntd"]][!(trial3[["ntd"]] %in% duplicatesNTD)]
+duplicatesNUTRITION<-c("24","71")
+trial3[["nutrition"]]<-trial3[["nutrition"]][!(trial3[["nutrition"]] %in% duplicatesNUTRITION)]
+duplicatesRI<-c("34","79")
+trial3[["respinfect"]]<-trial3[["respinfect"]][!(trial3[["respinfect"]] %in% duplicatesRI)]
+duplicatesSKIN<-c("13","45")
+trial3[["skin"]]<-trial3[["skin"]][!(trial3[["skin"]] %in% duplicatesSKIN)]
+duplicatesSUBS<-c("35","76","79")
+trial3[["skin"]]<-trial3[["skin"]][!(trial3[["skin"]] %in% duplicatesSUBS)]
+duplicatesUNINTENT<-c("45")
+trial3[["unintent"]]<-trial3[["unintent"]][!(trial3[["unintent"]] %in% duplicatesUNINTENT)]
+
+
+
+deaths_icd9$code3<-ifelse(nchar(deaths_icd9$code2)>2, substr(deaths_icd9$code2,1,nchar(deaths_icd9$code2)-1), deaths_icd9$code2)
+
+
+deaths_icd9$newcause3<-0
+for (y in causenames) {
+  deaths_icd9$newcause3[which(deaths_icd9$code3 %in% trial3[[y]])] <- y
+}
+deaths_icd9$causes<-0
+deaths_icd9$causes<-ifelse(deaths_icd9$trial2==0, deaths_icd9$newcause3, deaths_icd9$trial2)
+
+save(deaths_icd9, file="R:/working/preparing data/DeathData/garbagecodes/deaths_icd9.RDATA")
+
+deathsbyCause9<-deaths_icd9 %>%
+  group_by(causes) %>%
+  tally()
+
+deathsbyCauses9final<-select(deaths_icd9, year, CT, sex, age, causes)
+
+#Isolate causes with no causes identified
+noCauses<-subset(deaths_icd10, causes==0)
+noCauses<-select(noCauses,1:5)
+colnames(noCauses)[5]<-"code"
+noCauses<-left_join(noCauses, icd10cm2019, by="code")
+
+noCauseTally<-noCauses %>%
+  group_by(major) %>%
+  tally()
+
+save(deathsbyCauses9final, file="R:/working/preparing data/DeathData/garbagecodes/icd9/deathsbyCausesICD9_final.RDATA")
+save(noCauses, file="R:/working/preparing data/DeathData/garbagecodes/noCausesICD9.RDATA")
+save(noCauseTally, file="R:/working/preparing data/DeathData/garbagecodes/noCauseICD9Tally.RDATA")
+
+```
+
+## Create ICD9 list
+
+```{r}
+deaths_icd9_list<-deaths_icd9 %>% select(causes, ICD9) %>% filter(causes!=0) %>% group_by(causes) %>% summarise(ICD9=paste(unique(ICD9), collapse=', '))
+
+write.csv(deaths_icd9_list, "R:/working/preparing data/DeathData/garbagecodes/deaths_icd9_list.csv", row.names = F)
+
+```
+
+

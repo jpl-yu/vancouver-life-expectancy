@@ -1,0 +1,323 @@
+---
+title: "prepareCON_5years"
+output: html_document
+---
+
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium
+    
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries and create a function that imports registry dataset and names the columns                                 
+             (B) Loop the import function for all years of registry data                                                                 
+             (C) Loop the import function for all years of census geodata data                                                             
+             (D) Load all the datasets needed to restrict the death data
+             (E) Reassign CT of mortality data based on number of years spent in residency
+
+
+# Load libraries and create a function that imports registry dataset and names the columns
+
+```{r}
+library("dplyr")
+library("tidyr")
+
+#registry
+import <-function(p,filename){
+  setwd("R:")
+  filepath = paste(p,filename,sep="")
+  dat <-read.fwf(file=filepath,fill=TRUE,widths=c(5,4,2,10,10,1)) 
+  colnames(dat) <-c("DAYSREG","YEAR", "VERSION","SEQNO","STUDYID","LINEFEED")
+
+  dat<<-dat
+  }
+
+#Import B for all census geodata except H&I
+importB <-function(p,filename){
+  setwd("R:")
+  filepath = paste(p,filename,sep="")
+  dat <-read.fwf(file=filepath,fill=TRUE,widths=c(2,3,6,2,4,2,10,10,1)) 
+  colnames(dat) <-c("PR","CMA","CT","PCCFVER","VERYEAR", "VERSION","SEQNO","STUDYID","LINEFEED")
+
+  dat<<-dat
+  }
+
+#Import H for only census geodata H&I
+importH <-function(p,filename){
+  setwd("R:")
+  filepath = paste(p,filename,sep="")
+  dat <-read.fwf(file=filepath,fill=TRUE,widths=c(5,7,2,4,2,10,10,1)) 
+  colnames(dat) <-c("CMAPuid","CTNAME","PCCFVER","VERYEAR", "VERSION","SEQNO","STUDYID","LINEFEED")
+
+  dat<<-dat
+  }
+
+```
+
+#Loop the import function for all years of registry data
+
+```{r}
+p <- "/DATA/registry/"
+dataFiles<-list.files(path="/DATA/registry/",pattern=".D.dat.gz")
+
+registry<-list()
+for (x in c(1:length(dataFiles))) {
+  registry[[x]] <- import(p,dataFiles[x])
+}
+
+save(registry, file="R:/working/preparing data/Consolidation/registry.rdata")
+```
+
+#Loop the import function for all years of census geodata data
+
+```{r}
+p <- "/DATA/census-geodata/"
+
+dataFilesB<-list.files(path="/DATA/census-geodata/",pattern=".B.dat.gz")
+
+dataFilesC<-list.files(path="/DATA/census-geodata/",pattern=".C.dat.gz")
+
+dataFilesD<-list.files(path="/DATA/census-geodata/",pattern=".D.dat.gz")
+
+dataFilesG<-list.files(path="/DATA/census-geodata/",pattern=".G.dat.gz")
+
+dataFilesH<-list.files(path="/DATA/census-geodata/",pattern=".H.dat.gz")
+
+dataFilesI<-list.files(path="/DATA/census-geodata/",pattern=".I.dat.gz")
+
+census.geodataB<-list()
+
+for (x in c(1:length(dataFilesB))) {
+  census.geodataB[[x]] <- importB(p,dataFilesB[x])
+}
+
+census.geodataC<-list()
+
+for (x in c(1:length(dataFilesC))) {
+  census.geodataC[[x]] <- importB(p,dataFilesC[x])
+}
+
+census.geodataD<-list()
+
+for (x in c(1:length(dataFilesD))) {
+  census.geodataD[[x]] <- importB(p,dataFilesD[x])
+}
+
+census.geodataG<-list()
+
+for (x in c(1:length(dataFilesG))) {
+  census.geodataG[[x]] <- importB(p,dataFilesG[x])
+}
+
+census.geodataH<-list()
+
+for (x in c(1:length(dataFilesH))) {
+  census.geodataH[[x]] <- importH(p,dataFilesH[x])
+}
+
+census.geodataI<-list()
+
+for (x in c(1:length(dataFilesI))) {
+  census.geodataI[[x]] <- importH(p,dataFilesI[x])
+}
+
+
+census.geodata<-c(census.geodataB,census.geodataC,census.geodataD,census.geodataG,census.geodataH,census.geodataI)
+
+save(census.geodata, file="R:/working/preparing data/Consolidation/censusgeodata.rdata")
+
+```
+
+#Load all the datasets needed to restrict the death data
+
+```{r}
+
+library(dplyr)
+load("R:/working/preparing data/Consolidation/registry.rdata")
+load("R:/working/preparing data/Consolidation/censusgeodata.rdata")
+df_dataYear<-read.csv(file="R:/working/preparing data/DeathData/final_mv_allyears.csv", header=TRUE, check.names = FALSE)
+
+
+```
+
+#Reassign CT of mortality data based on number of years spent in residency
+
+```{r}
+library(stringr)
+library(dplyr)
+#restrict data for first set with differnet formatting (1990-2008)
+geodata1<-census.geodata[1:20]
+#restrict data for next 8 years of data (2009-2017)
+geodata2<-census.geodata[21:29]
+
+#Create into dataframe and select columns needed and bring back all data together
+geodata1<-do.call("rbind", geodata1)
+
+#What if we included only data from Metro Van (CMA==933)
+geodata1<-geodata1 %>% filter(CMA==933) #4686932
+
+geodata1<-select(geodata1, CT, VERYEAR, STUDYID)
+
+geodata2<-do.call("rbind", geodata2) #1277902
+geodata2<-geodata2 %>% filter(CMAPuid==59933) #548950
+
+geodata2<-geodata2 %>%
+  select(CTNAME, VERYEAR, STUDYID) %>%
+  rename(CT=CTNAME)
+geodata<-geodata1 %>% rbind(geodata2) %>% rename(CT2=CT)
+
+
+#link to death data to make the restriction and remove data sets with NAs in the CTs and REGDTs
+restrictset<-left_join(geodata, df_dataYear, by="STUDYID")
+restrictset2<-restrictset[!is.na(restrictset$CT), ]
+
+restrictset2<-restrictset2[-c(4)]
+
+#BETTER MERGE HERE
+restrictset2<-left_join(df_dataYear,geodata, by="STUDYID")
+restrictset2<-restrictset2[-c(1)]
+
+#Tally up the number of times a decedent is in the same CT prior to death and subset dataset so that there is at least 2 years of data (So decedent was in the same CT for at least one year)
+restrictset4<-restrictset2 %>%
+  group_by(STUDYID) %>%
+  tally() %>%
+  subset(n>2) %>%
+  select(STUDYID) #326392 data files where decedent was in the same CT for at least one year
+
+restrictset5<-restrictset2 %>%
+  arrange(STUDYID, VERYEAR) %>%
+  rename(year=DEATHDTCCYY)
+
+#Covert string to integers
+restrictset5$VERYEAR<-strtoi(restrictset5$VERYEAR)
+
+
+#create column that indicates if a decedent has been in a certain CT for X amount of years - change VERYEAR to number of years for restriction
+
+restrict <- restrictset5 %>%
+  mutate(restrict = case_when(
+    .$year - .$VERYEAR >0 & .$CT==.$CT2 ~ 1,
+    TRUE ~ 0
+  )
+)
+
+#Identify CT that shows up most frequently in the past 5 years
+
+restrict2 <- restrictset5 %>%
+  select(CT2, VERYEAR, STUDYID, year) %>%
+  group_by(STUDYID) %>%
+  tally() #351578 of 351578
+
+####################subset studyids with less than 5 years 
+
+restrict3 <-restrict2 %>% filter(n<5)
+restrict3 <- restrict3[['STUDYID']]
+restrict4<-restrict[restrict$STUDYID %in% restrict3,]
+
+#tally the CT that shows up the most in CT2 and choose the highest number
+restrict5 <- restrict4 %>% group_by(CT2,STUDYID) %>% count() %>% ungroup()  
+
+restrict5 <- restrict5 %>% group_by(STUDYID) %>% mutate(m=max(n)) %>% filter(n==max(n)) %>% select(STUDYID, CT2)
+
+length(unique(restrict5$STUDYID))
+
+#Look for death files with more than one option CT because the person has lived in the CT an equal amount of time. IN this case, we decide to choose the CT of the most recent year
+
+#3526 of 50077 of dataset are duplicates
+duplicates <-restrict5 %>% group_by(STUDYID) %>% tally() %>% filter(n>1)  %>% left_join(restrict4, by = "STUDYID") %>% group_by(STUDYID) %>% mutate(CT3= case_when(VERYEAR==max(VERYEAR) ~ "1")) %>% filter(CT3==1) %>% mutate(CT3=CT2) %>% select(STUDYID, CT3) %>% rename(CT=CT3)
+
+remove<-duplicates[['STUDYID']]
+
+#remove from duplicate list since decisions have been made already for that dataset
+restrict6<-restrict5[!(restrict5$STUDYID %in% remove),]
+
+#double checking there are no duplicates
+duplicates2 <-restrict6 %>% group_by(STUDYID) %>% tally()
+
+restrict6$CT3<-restrict6$CT2
+
+#Final list of chosen CTs based on death files with less than 5 years worth of residential history
+restrict6<- restrict6 %>% select(STUDYID, CT3) %>% rename(CT=CT3) %>% rbind(duplicates)
+
+final<-restrict6 #50078 in final dataset # after CMA restrict, 62698 of 351567 (17.8% has less than 5 years of residential information within the study area)
+
+
+###########################################
+#####Working on dataset with 5 years and more of data to isolate only data for five years of each studyid to then decide on CT based on frequency
+
+restrict3 <-restrict2 %>% filter(n>4)
+restrict3 <- restrict3[['STUDYID']]
+restrict4<-restrict[restrict$STUDYID %in% restrict3,]
+#Ensure we include decdents five most recent years
+restrict5 <- restrict4 %>% group_by(STUDYID) %>%
+  mutate(CT3=case_when(VERYEAR==max(VERYEAR) | 
+                      VERYEAR==(max(VERYEAR)-1) |
+                      VERYEAR==(max(VERYEAR)-2) |
+                      VERYEAR==(max(VERYEAR)-3) |
+                      VERYEAR==(max(VERYEAR)-4)  ~ "1")) %>%
+  filter(CT3==1)
+
+#tally the CT that shows up the most in CT2 and choose the highest number
+restrict5 <- restrict5 %>% group_by(CT2,STUDYID) %>% count() %>% ungroup()  
+
+restrict6 <- restrict5 %>% group_by(STUDYID) %>% mutate(m=max(n)) %>% filter(n==max(n)) %>% select(STUDYID, CT2)
+
+#Isolate the duplicates to choose the most recent year of data
+
+duplicates <-restrict6 %>% group_by(STUDYID) %>% tally() %>% filter(n>1)  %>% left_join(restrict4, by = "STUDYID") %>% group_by(STUDYID) %>% mutate(CT3= case_when(VERYEAR==max(VERYEAR) ~ "1")) %>% filter(CT3==1) %>% mutate(CT3=CT2) %>% select(STUDYID, CT3) %>% rename(CT=CT3)
+
+length(unique(restrict6$STUDYID))
+
+remove<-duplicates[['STUDYID']]
+
+#remove from duplicate list since decisions have been made already for that dataset
+restrict7<-restrict6[!(restrict6$STUDYID %in% remove),]
+#double checking there are no duplicates
+duplicates2 <-restrict7 %>% group_by(STUDYID) %>% tally()
+
+restrict7$CT3<-restrict7$CT2
+
+#Final list of chosen CTs based on death files with less than 5 years worth of residential history
+restrict7<- restrict7 %>% select(STUDYID, CT3) %>% rename(CT=CT3) %>% rbind(duplicates)
+
+
+final2<-restrict7 #301502 in final dataset #after CMA restriction, 288882 of 351587 (82.2% of the dataset had at least 5 years of residential history within the study area)
+
+
+#Bind together the final datasets and assigned CTs based on frequency in the last 5 years
+
+final<-rbind(final,final2) #351580 of 351587
+listofFinal<-final[['STUDYID']]
+
+#keep only death files from final list
+deaths<-df_dataYear[(df_dataYear$STUDYID %in% listofFinal),] #351587 of 351587
+deaths<-deaths[c(-1)]
+deaths<-deaths %>% left_join(final, by="STUDYID") %>% group_by(STUDYID) %>% mutate(same=case_when(CT.x==CT.y ~ "1"))
+countSame<-deaths %>% filter(same==1) #155759 of 351591 stayed the same #After CMA restriction, 157734 stayed the same (44.9%)
+
+#look at deaths that are not included for investigation
+deaths2<-df_dataYear[!(df_dataYear$STUDYID %in% listofFinal),] #10873 of 351587 #after cma, 0
+
+#Assign new CTs 
+
+#Count NAs of new CT assignments
+sum(is.na(deaths$CT.y)) #16646 have NAs, or 4.7% of death files had no annual information of residency prior to death
+
+#First assign NAs with CT from previous 
+deaths$CT.y<-ifelse(is.na(deaths$CT.y)==TRUE, deaths$CT.x, deaths$CT.y)
+deaths <- deaths %>% mutate(CT=CT.y) 
+countUnknowns <- deaths %>% filter(CT==0 | CT==999.99) #2598 unknowns
+#Replace unknowns with CTs of previous assignment
+deaths$CT<-ifelse(deaths$CT==0 | deaths$CT==999.99, deaths$CT.x, deaths$CT)
+
+
+finalMortality<-select(deaths,CT,PC_CT,DEATHPC_6_CT,DEATHDTCCYY,DEATHDTMM,SEX,MARITAL,NATIVE,BIRTHDTCCYY,AGE,BIRTHCITY,OCCUPATION,ICD_VERSN,CAUSE,AXIS_CODES,STUDYID)
+
+write.csv(finalMortality, file="R:/working/preparing data/DeathData/final_mv_allyears_sensitivity5.csv")
+
+
+
+```

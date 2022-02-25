@@ -1,0 +1,76 @@
+---
+title: "adjustDeathCTs"
+output: html_document
+---
+
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                       
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries, import files, and define attributes                                                      
+             (B) Adjust CTs of death causes and then group and save for all causes                                                               
+
+
+## Load libraries, import files, and define attributes
+
+```{r}
+
+libs<-c("car","data.table","dplyr")
+lapply(libs, require, character.only=TRUE)
+
+merge<-read.csv("R:/working/preparing data/Merge/merge_all12.csv", header=T)
+
+load("R:/working/preparing data/DeathData/causefiles.RData")
+causenames=substr(causefiles,1,nchar(causefiles)-4)
+
+dir<-"R:/working/preparing data/DeathData/causes/deathfiles/crosswalked/"
+file<-"_deaths.RData"
+dir2<-"R:/working/modeling/deaths/causes/"
+
+```
+
+
+## Adjust CTs of death causes and then group and save files for all causes
+
+```{r}
+
+#Rename CT areas so that we can end up with df with area named as CT
+load("R:/working/preparing data/CT368.RDATA")
+names(CT)<-c("CT","area")
+
+for (x in 1:21) {
+  load(paste0(dir, causenames[x], file)) 
+  
+  for (i in 1:nrow(merge)){
+    deaths$CT[which(deaths$CT==as.numeric(merge[i,1]))]<-as.numeric(merge[i,2])
+  }
+
+  deaths<-deaths %>%
+    rename(area=CT) 
+  
+  deaths<-merge(deaths,CT, by="area")
+  
+  deaths<-deaths %>%
+    select(CT,year,sex,age,death)
+  
+  newDeaths <-deaths %>%
+    group_by(CT,year,sex,age) %>%
+    summarise(death=sum(death, na.rm=TRUE))
+  
+  deaths<-newDeaths[order(newDeaths$CT),]
+  
+  deaths$CT<-as.numeric(deaths$CT)
+  deaths$sex<-as.integer(deaths$sex)
+  deaths<-na.omit(deaths)
+  deaths<-data.table::setDT(deaths)
+  
+  length<-length(unique(deaths$CT))
+  
+  save(deaths, file=paste0(dir2, causenames[x], file))
+}
+
+```

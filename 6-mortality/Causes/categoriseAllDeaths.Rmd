@@ -1,0 +1,141 @@
+---
+title: "categoriseAllDeaths"
+output: html_document
+---
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                       
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries, import data, and define attributes                                                  
+             (B) Categorise age groups
+             (C) Keep final columns and change variable types
+             (D) Derive causes for deaths using ICD10 codes
+             (E) Count number of deaths and save file
+             
+## Load libraries, import data, and define attributes  
+
+```{r}
+library("dplyr")
+library("tidyr")
+library("data.table")
+
+setwd("R:/working/preparing data/DeathData")
+allDeaths<-read.csv(file="final_mv_allyears.csv", header=TRUE, check.names = FALSE)
+```
+
+
+## Categorise age groups
+
+```{r}
+#Categorise age groups and rename column names
+agebreaks <-c(0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,113)
+agelabels <-c("0","5","10","15","20","25","30","35","40","45","50","55","60","65","70","75","80","85")
+
+deaths<-setDT(allDeaths) [, agegroups := cut(AGE, breaks = agebreaks, right= FALSE, labels = agelabels)]
+
+```
+
+## Keep final columns and change variable types
+
+```{r}
+
+colnames(deaths)[colnames(deaths)=="DEATHDTCCYY"]<-"year"
+colnames(deaths)[colnames(deaths)=="SEX"]<-"sex"
+colnames(deaths)[colnames(deaths)=="agegroups"]<-"age"
+colnames(deaths)[colnames(deaths)=="CAUSE"]<-"cause"
+colnames(deaths)[colnames(deaths)=="ICD_VERSN"]<-"icdversn"
+
+
+
+#Rename sex variables from factors to values
+levels(deaths$sex)<- c("2","1","3")
+
+deaths$sex<-as.numeric(as.character(deaths$sex))
+deaths$age<-as.numeric(as.character(deaths$age))
+
+deaths <-select(deaths,year,CT,sex,age,cause,icdversn)
+
+```
+
+
+## Derive causes for deaths using ICD10 codes
+
+```{r}
+load("R:/working/preparing data/DeathData/causefiles.RData")
+causenames=substr(list.files(pattern="*.csv"),1,nchar(causefiles)-4)
+load("R:/working/preparing data/DeathData/icd9/gbdCausesicd9.RData")
+load("R:/working/preparing data/DeathData/gbdcausesicd10.RData")
+
+
+#ICD10 codes
+deaths_icd10<-subset(deaths, icdversn==10)
+names(deaths_icd10)[5]<-"ICD10"
+deaths_icd10$causeid<-0
+deaths_icd10$causeidgarb<-0
+
+deaths_icd10$ICD10 <- trimws(as.character(deaths_icd10$ICD10))
+for (y in causenames) {
+  deaths_icd10$causeid[which(deaths_icd10$ICD10 %in% gbdCausesicd10[[y]])] <- y
+}
+
+deathsbyCause10<-deaths_icd10 %>%
+  group_by(causeid) %>%
+  tally()
+
+save(deaths_icd10, file="R:/working/preparing data/DeathData/causes/deaths_icd10.RData")
+
+
+#ICD9 codes
+deaths_icd9<-subset(deaths, icdversn==9)
+names(deaths_icd9)[5]<-"ICD9"
+deaths_icd9$causeid<-0
+
+#trial with just three characters
+deaths_icd9$ICD9<-as.character(deaths_icd9$ICD9)
+deaths_icd9$ICD9<-gsub("(^\\s+)|(\\s+$)", "", deaths_icd9$ICD9)
+
+for (y in causenames) {
+  deaths_icd9$causeid[which(deaths_icd9$ICD9 %in% gbdCausesicd9[[y]])] <- y
+}
+
+deathsbyCause9<-deaths_icd9 %>%
+  group_by(causeid) %>%
+  tally()
+
+
+
+
+for (y in causenames) {
+temp<-transform(deaths_icd9,causeid=grepl(paste0(gbdCausesicd9[[y]], collapse = "|"),ICD9)+0)
+deaths_icd9$causeid[temp$causeid == 1] <- y
+}
+
+deathsbyCause9<-deaths_icd9 %>%
+  group_by(causeid) %>%
+  tally()
+
+save(deaths_icd9, file="R:/working/preparing data/DeathData/causes/deaths_icd9.RData")
+
+
+```
+
+
+## Count number of deaths and save file
+
+```{r}
+#Count number of deaths
+mortcounts<-count(deaths, year, CT, sex, age)
+colnames(mortcounts)[colnames(mortcounts)=="n"]<-"death"
+
+#sort data by sequentially of CT
+deaths<-mortcounts[order(mortcounts$CT),]
+
+setDT(deaths)
+write.csv(deaths, file="R:/working/preparing data/DeathData/years/allyears/allDeaths.csv")
+save(deaths, file="R:/working/preparing data/DeathData/years/final/deaths.RData")
+
+```

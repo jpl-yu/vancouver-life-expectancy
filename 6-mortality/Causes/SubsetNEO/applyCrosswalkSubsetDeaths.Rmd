@@ -1,0 +1,82 @@
+---
+title: "categoriseAllDeaths"
+output: html_document
+---
+
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                       
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries, import data, and define attributes                                                      
+             (B) Select years of death
+             (C) Load and apply crosswalk 
+             
+
+## Load libraries, import data, and define attributes 
+
+```{r}
+library("tidyr")
+library("data.table")
+library("dplyr")
+
+load("R:/working/preparing data/DeathData/causes/subset/deaths_subset.rdata")
+load("R:/working/preparing data/listCTs.RData")
+listCTs<-as.data.frame(listCTs)
+names(listCTs)<-"ctuid_t"
+load("R:/working/preparing data/CTIDs.RData")
+```
+
+## Select years of death and recode age variable
+
+```{r}
+deaths <- subset(deaths, year>1989)
+deaths<-deaths[order(deaths$CT),]
+
+deaths$age<-car::recode(deaths$age,"4=0;9=5;14=10;19=15;24=20;29=25;34=30;39=35;44=40;49=45;54=50;59=55;64=60;69=65;74=70;79=75;84=80;85=85")#must unload dplyr for recode in car package to work
+
+```
+
+# Load and apply Crosswalk 
+
+```{r}
+crosswalk11<-read.csv(file="R:/working/preparing data/prepareCrosswalk/prepared/crosswalk11.csv", header=TRUE)
+load("R:/working/preparing data/CT2011.RData")
+names(CT2011)<-"ctuid_t"
+
+names(deaths)[2]<-"ctuid_s"
+
+
+#Multiply 2011 death file with crosswalk table to get 2016 CT estimates
+death2011<-merge(x=crosswalk11, y=deaths, by="ctuid_s", all.y=TRUE)
+death2011<-subset(death2011, ctuid_s>0)
+death2011<-death2011[order(death2011$ctuid_s,death2011$year,death2011$sex, death2011$age),]
+death2011<-death2011 %>% mutate(death2011 = w * death)
+death2016 = death2011 %>% group_by(ctuid_t, year, sex, age) #%>%
+  #summarise(death2011 = sum(death2011, na.rm = T))
+death2016<-death2016[order(death2016$ctuid_t,death2016$year,death2016$sex, death2016$age),]
+
+deathUniqueCT2016<-setDT(death2016)[,lapply(.SD, uniqueN), ctuid_t]
+#isolate to find missing CTs for each year
+death2016m<-select(deathUniqueCT2016, "ctuid_t")
+#find missing CTs
+missing2016<-anti_join(CT2011, death2016m, by="ctuid_t")
+
+```
+
+## Relabel and save file
+
+```{r}
+deaths<-data.frame(death2016)
+names(deaths)[10]<-"death"
+
+deathNa<-data.frame(table(is.na(deaths)))#663
+names(deaths)[3]<-"CT"
+deaths<-deaths[,c(6,3,7,8,10)]
+
+save(deaths, file="R:/working/preparing data/DeathData/causes/subset/deaths_cwapplied_subset.RData")
+```
+

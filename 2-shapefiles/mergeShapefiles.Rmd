@@ -1,0 +1,117 @@
+---
+title: "mergeShapefiles"
+output: html_document
+---
+
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                       
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries and import data                                                    
+             (B) Apply algorithm to replace old CTIDs with new CTIds from another dataframe
+
+#Load libraries and import data
+
+```{r}
+libs<-c("rgdal", "maptools", "gridExtra", "raster", "sp", "dplyr", "rgeos")
+lapply(libs, require, character.only=TRUE)
+
+shape2016<-readOGR(dsn="R:/working/preparing data/ShapeFiles/allyears/2016_CensusTracts/Selection/2016MetroVanCTs.shp", layer="2016MetroVanCTs")
+shape2016$CTNAME<-as.numeric(as.character(shape2016$CTNAME))
+
+merge<-read.csv(file="R:/working/preparing data/Merge/merge_1.csv", header=T)
+```
+
+             
+#Apply algorithm to replace old CTIDs with new CTIds from another dataframe
+
+```{r}
+
+outliersremove<-dplyr::select(merge,1)
+outliersmerge<-dplyr::select(merge,2)
+names(outliersremove)<-names(outliersmerge)
+alloutliers<-rbind(outliersremove,outliersmerge)
+alloutliers<-as.vector(alloutliers[,1])
+
+shape2016b<-shape2016[!shape2016$CTNAME %in% alloutliers,]
+shape2016b<-spChFIDs(shape2016b, as.character(shape2016b$CTNAME))
+newshape<-shape2016b[,(2)]
+
+for (i in 1:nrow(merge)) {
+test1<-shape2016[shape2016$CTNAME==as.numeric(merge[i,1]),]
+test2<-shape2016[shape2016$CTNAME==as.numeric(merge[i,2]),]
+test1$CTNAME<-as.numeric(merge[i,2])
+test3<-rbind(test1,test2)
+test4<-aggregate(test3, by="CTNAME")
+newshape<-rbind(newshape, test4)
+rm(test1,test2,test3,test4)
+}
+
+rm(shape2016,shape2016b,outliersremove,outliersmerge,alloutliers,i,merge)
+
+#function to iterate the shape merging
+
+dir<-"R:/working/preparing data/Merge"
+mergeShape<-function(filename) {
+  merge<-read.csv(paste0(dir, "/",filename ,".csv"), header=T)
+  outliersremove<-dplyr::select(merge,1)
+  outliersmerge<-dplyr::select(merge,2)
+  names(outliersremove)<-names(outliersmerge)
+  alloutliers<-rbind(outliersremove,outliersmerge)
+  alloutliers<-as.vector(alloutliers[,1])
+  
+  shape2<-newshape[!newshape$CTNAME %in% alloutliers,]
+  shape2<-spChFIDs(shape2, as.character(shape2$CTNAME))
+  newshape2<-shape2[,(1)]
+  
+  for (i in 1:nrow(merge)) {
+  test1<-newshape[newshape$CTNAME==as.numeric(merge[i,1]),]
+  test2<-newshape[newshape$CTNAME==as.numeric(merge[i,2]),]
+  test1$CTNAME<-as.numeric(merge[i,2])
+  test3<-rbind(test1,test2)
+  test4<-aggregate(test3, by="CTNAME")
+  newshape2<-rbind(newshape2, test4)
+  rm(test1,test2,test3,test4)
+  }
+  return(newshape<-newshape2)
+}
+
+newshape<-mergeShape("merge_2")
+newshape<-mergeShape("merge_3")
+newshape<-mergeShape("merge_4")
+newshape<-mergeShape("merge_5")
+newshape<-mergeShape("merge_6")
+newshape<-mergeShape("merge_7")
+newshape<-mergeShape("merge_8")
+
+newshape<-subset(newshape, !CTNAME==270)
+shape<-newshape[order(newshape@data[["CTNAME"]]),]
+
+
+#Save CTIDs to identify shapes later
+CT<-unique(shape@data[["CTNAME"]])
+numbers<-0:(length(shape)-1)
+CT<-data.frame(numbers,CT)
+names(CT)<-c("area","CT")
+save(CT, file="R:/working/preparing data/CT368.RDATA")
+
+shape$CTNAME<-1:nrow(shape) #changing so that ct names are sequential from 1
+subtract = 1
+shape$CTNAME<-shape$CTNAME - subtract
+
+#change shape id to reflect rowname
+for (i in 1:nrow(shape))
+shape@polygons[[i]]@ID<-as.character(i-1)
+
+plot(shape)
+save(shape, file="R:/working/modeling/shape_files/shape-mapping368CTs.RData")
+
+rm(newshape, merge, outliersmerge, outliersremove, shape2016, shape2016b, alloutliers, i, subtract,newshape2,shape2)
+
+```
+
+

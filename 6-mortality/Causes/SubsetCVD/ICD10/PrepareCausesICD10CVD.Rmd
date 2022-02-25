@@ -1,0 +1,75 @@
+---
+title: "PrepareCauses_ICD10"
+output: html_document
+---
+
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                       
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries, import data, and define attributes                                                  
+             (B) Prepare ICD codes for 21 GBD causes     
+
+## Load libraries, import data, and define attributes 
+
+```{r}
+library(stringr)
+library(abind)
+library(data.table)
+library(dplyr)
+library(stringi)
+dir<-"R:/working/preparing data/DeathData/subsetcvd/icd10/"
+setwd(dir)
+```
+
+## Prepare ICD codes for 21 GBD causes
+
+```{r}
+causefiles=(list.files(pattern="*.csv"))
+causefiles=setNames(causefiles, substr(list.files(pattern="*.csv"),1,nchar(causefiles)-4))
+allCauses<-lapply(causefiles,read.table,header=F,sep=",", stringsAsFactors=F)
+transposer<-function(df){
+  z<-t(df)
+}
+allCauses<-lapply(allCauses, transposer)
+
+##FIND OUT how to apply this function to the list
+causes=function(x,output){
+  V1 = x[1]
+  V2 = gsub("[A-Z]","", V1)
+  V3 = substring(V1,1,1)
+  V4 = word(V2,1,sep="\\-")
+  V5 = sub("^.+-","", V2)
+  seq<-as.data.frame((t(seq(V4,V5, by=0.1))))
+  final = sub("^",V3, seq)
+  final = gsub("\\.","",final)
+}
+
+allCauses2<-do.call(rbind.data.frame, allCauses)
+allCauses3<-apply(allCauses2, 1, causes)
+
+allCauses4<-sapply(allCauses3, function(x) subset(x, nchar(as.character(x)) <=3))
+allCauses4<-sapply(allCauses4, function(x) sub( '(?<=.{1})','0', x, perl=TRUE))
+
+allCauses3<-Map(c, allCauses3, allCauses4)
+
+
+gbdCauses<-list(allCauses3[c(1)], allCauses3[c(2:7)])
+gbdCauses2=setNames(gbdCauses, substr(list.files(pattern="*.csv"),1,nchar(causefiles)-4))
+
+gbdCausesicd10<-lapply(gbdCauses2, rapply, f=c)
+
+#Execute if we want disease icd codes in dataframe
+#gbdCVD<-matrix(unlist(gbdCauses3[["cvd"]]), byrow=TRUE, ncol=length(gbdCauses3[1]))
+
+rm(allCauses, allCauses2, allCauses3, allCauses4, allCauses5, gbdCauses, gbdCauses2,newCodes, causes, transposer)
+save(gbdCausesicd10, file="R:/working/preparing data/DeathData/cvdCausesicd10.RData")
+
+```
+
+
+

@@ -1,0 +1,259 @@
+---
+title: "map_cause_spplot"
+output: html_document
+---
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                       
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load files and define cause, year, CTs, and directories for mapping                                                     
+             (B) Map for male-only, cause-specific mortality data                                                             
+             (C) Map for female-only, cause-specific mortality data
+             (D) Loop to map both male and female-only, multiple cause-specific mortality data
+
+#Load files and define cause, year, CTs, and directories for mapping
+
+```{r}
+library(tidyr)
+library(sp)
+library(raster)
+library(dplyr)
+library(viridis)
+
+load("R:/working/preparing data/DeathData/causefiles.RData")
+causenames=substr(causefiles,1,nchar(causefiles)-4)
+
+causenames<-"prostate"
+dir<-"R:/working/modeling/temp_dir/causes/"
+file<-".rdata"
+CTs<-368
+dir2<-"R:/working/preparing data/"
+dir3<-"R:/working/modeling/shape_files/shape-mapping"
+years<-c(1991)
+dir4<-"R:/working/results/"
+```
+
+#Map for male-only, cause-specific mortality data
+
+```{r}
+#Males
+
+for (this_cause in causenames) { #do not run if needed to only to run one cause - start
+     
+  for (year in years) {    
+  load(paste0(dir,this_cause, "/lt_est_", year, "_males_", CTs, file))
+  
+  totalsBoth<-totalsMales
+    
+  load(paste0(dir2, "CT", CTs, file))#LOAD CT FILE
+  load(paste0(dir3, CTs, "CTs", file)) #LOAD CT SHAPEFILE
+  shape<-spTransform(shape, crs("+init=epsg:4326"))###do not run if only running for one cause - finish
+  
+  #################BOTH########################
+    
+    range<-round(quantile(totalsBoth$wt_mx_mean, c(.1,.3,.5,.7,.9), na.rm=TRUE), digits=1) ##change sex if needed
+  
+    #Prepare data to be mapped and plotted
+    #at<-c(range)
+    at=c(round(quantile(totalsBoth$wt_mx_mean, .05, na.rm=T)),range,round(quantile(totalsBoth$wt_mx_mean, .95, na.rm=T)))
+    fifthperc<-round(quantile(totalsBoth$wt_mx_mean, .05, na.rm=T), digits=1)
+    ninetyfifthperc<-round(quantile(totalsBoth$wt_mx_mean, .95, na.rm=T), digits=1)
+    
+    labels=c(paste0(""),fifthperc, range, ninetyfifthperc)
+    
+    colnames(shape@data)[1]<-"CTNAME"
+    shape$CTNAME<-as.numeric(as.character(shape$CTNAME))
+    
+    #Prep LE
+    names(CT)<-c("CTNAME","CT")
+    birth_all2<-totalsBoth %>%
+      merge(CT, by="CT") %>%
+      select(CTNAME,wt_mx_mean) %>%
+      rename(mx=wt_mx_mean) 
+    birth_all2$CTNAME<-as.numeric(birth_all2$CTNAME)
+
+    #merge shapefiles with current Exp and Mortality
+    shape$CTNAME<-as.numeric(as.character(shape$CTNAME))
+    shapeMX<-merge(x=shape, y=birth_all2, by="CTNAME")
+    
+    
+    pdf(paste0(dir4, this_cause,"/",this_cause ,"_mxmap_",year,"_males.pdf"))
+    
+    #mapping life expectancy
+    names(shapeMX@data)[2]<-"exp"
+    shapeMX$exp<-as.numeric(shapeMX$exp)
+    shapeMX@data$exp<-cut(shapeMX@data$exp, breaks=c(0,at,Inf))
+    print(
+    spplot(shapeMX, "exp",  sp.layout=list("sp.polygons",shapeMX),col.regions=rev(viridis(8)), col="transparent", par.settings = list(axis.line=list(col="transparent")), main=paste0(year," Prostate Cancer Mortality Rate per 100,000 for Males"), colorkey=list(labels=list(at=seq(0.5,length(at)+1), labels=labels))))
+    
+    dev.off() 
+  }
+}
+
+      
+```
+
+#Map for female-only, cause-specific mortality data
+
+```{r}
+
+for (this_cause in causenames) { #do not run if only needing to run for one cause - start
+     
+  for (year in years) {    
+  load(paste0(dir,this_cause, "/lt_est_", year, "_females_", CTs, file))
+  
+  totalsBoth<-totalsFemales
+
+  load(paste0(dir2, "CT", CTs, file))#LOAD CT FILE
+  load(paste0(dir3, CTs, "CTs", file)) #LOAD CT SHAPEFILE
+  shape<-spTransform(shape, crs("+init=epsg:4326"))###do not run if only needing to run for one cause - finish
+  #################BOTH########################
+    
+    range<-round(quantile(totalsBoth$wt_mx_mean, c(.1,.3,.5,.7,.9), na.rm=TRUE), digits=1) #change sex if needed
+  
+    #Prepare data to be mapped and plotted
+    at=c(round(quantile(totalsBoth$wt_mx_mean, .05, na.rm=T)),range,round(quantile(totalsBoth$wt_mx_mean, .95, na.rm=T)))
+    fifthperc<-round(quantile(totalsBoth$wt_mx_mean, .05, na.rm=T), digits=1)
+    ninetyfifthperc<-round(quantile(totalsBoth$wt_mx_mean, .95, na.rm=T), digits=1)
+    
+    labels=c(paste0(""),fifthperc, range, ninetyfifthperc)
+    
+    colnames(shape@data)[1]<-"CTNAME"
+    shape$CTNAME<-as.numeric(as.character(shape$CTNAME))
+    
+    #Prep LE
+    names(CT)<-c("CTNAME","CT")
+    birth_all2<-totalsBoth %>%
+      merge(CT, by="CT") %>%
+      select(CTNAME,wt_mx_mean) %>%
+      rename(mx=wt_mx_mean) 
+    birth_all2$CTNAME<-as.numeric(birth_all2$CTNAME)
+
+    #merge shapefiles with current Exp and Mortality
+    shape$CTNAME<-as.numeric(as.character(shape$CTNAME))
+    shapeMX<-merge(x=shape, y=birth_all2, by="CTNAME")
+    
+    
+    pdf(paste0(dir4, this_cause,"/",this_cause ,"_mxmap_",year,"_females.pdf"))
+    
+    #mapping life expectancy
+    names(shapeMX@data)[2]<-"exp"
+    shapeMX$exp<-as.numeric(shapeMX$exp)
+    shapeMX@data$exp<-cut(shapeMX@data$exp, breaks=c(0,at,Inf))
+    print(
+    spplot(shapeMX, "exp",  sp.layout=list("sp.polygons",shapeMX),col.regions=rev(viridis(8)), col="transparent", par.settings = list(axis.line=list(col="transparent")), main=paste0(year," Prostate Cancer Mortality Rate per 100,000 for Females"), colorkey=list(labels=list(at=seq(0.5,length(at)+1), labels=labels))))
+    
+    dev.off() 
+  }
+}
+
+```
+
+#Loop to map both male and female-only, multiple cause-specific mortality data
+
+```{r}
+for (this_cause in causenames) {
+
+     
+  for (year in years) {
+        
+  load(paste0(dir,this_cause, "/lt_est_", year, "_", CTs, file))
+  load(paste0(dir,this_cause, "/lt_est_", year, "_females_", CTs, file))
+  load(paste0(dir,this_cause, "/lt_est_", year, "_males_", CTs, file))
+  
+  load(paste0(dir2, "CT", CTs, file))#LOAD CT FILE
+  load(paste0(dir3, CTs, "CTs", file)) #LOAD CT SHAPEFILE
+  shape<-spTransform(shape, crs("+init=epsg:4326"))
+  
+  ##FEMALES
+    
+    range<-round(quantile(totalsFemales$wt_mx_mean, c(.1,.3,.5,.7,.9), na.rm=TRUE), digits=1) ##CHANGE SEX
+  
+    #Prepare data to be mapped and plotted
+    #at<-c(range)
+    at=c(round(quantile(totalsFemales$wt_mx_mean, .05)),range,round(quantile(totalsFemales$wt_mx_mean, .95)))
+    fifthperc<-round(quantile(totalsFemales$wt_mx_mean, .05), digits=1)
+    ninetyfifthperc<-round(quantile(totalsFemales$wt_mx_mean, .95), digits=1)
+    
+    labels=c(paste0(""),fifthperc, range, ninetyfifthperc)
+    
+    colnames(shape@data)[1]<-"CTNAME"
+    shape$CTNAME<-as.numeric(as.character(shape$CTNAME))
+    
+    #Prep LE
+    names(CT)<-c("CTNAME","CT")
+    birth_all2<-totalsFemales %>%
+      merge(CT, by="CT") %>%
+      select(CTNAME,wt_mx_mean) %>%
+      rename(mx=wt_mx_mean) 
+    birth_all2$CTNAME<-as.numeric(birth_all2$CTNAME)
+
+    #merge shapefiles with current Exp and Mortality
+    shape$CTNAME<-as.numeric(as.character(shape$CTNAME))
+    shapeMX<-merge(x=shape, y=birth_all2, by="CTNAME")
+    
+    pdf(paste0(dir4, this_cause,"/",this_cause ,"_mxmap_",year,"_females.pdf"))
+    
+    #mapping life expectancy
+    names(shapeMX@data)[2]<-"exp"
+    shapeMX$exp<-as.numeric(shapeMX$exp)
+    shapeMX@data$exp<-cut(shapeMX@data$exp, breaks=c(0,at,Inf))
+    print(
+    spplot(shapeMX, "exp",  sp.layout=list("sp.polygons",shapeMX), col.regions=rev(viridis(8)), col="transparent", par.settings = list(axis.line=list(col="transparent")), main=paste0(year," ", this_cause, " Mortality Rate per 100,000 for Females"), colorkey=list(labels=list(at=seq(0.5,length(at)+1), labels=labels))))
+    
+    dev.off()
+    
+
+  load(paste0(dir2, "CT", CTs, file))#LOAD CT FILE
+  load(paste0(dir3, CTs, "CTs", file)) #REPLACE DESIRED CT MAP
+  shape<-spTransform(shape, crs("+init=epsg:3857"))
+  
+  ##MALES
+    
+    range<-round(quantile(totalsMales$wt_mx_mean, c(.1,.3,.5,.7,.9), na.rm=TRUE), digits=1) ##CHANGE SEX
+  
+    #Prepare data to be mapped and plotted
+    at=c(round(quantile(totalsMales$wt_mx_mean, .05)),range,round(quantile(totalsMales$wt_mx_mean, .95)))
+    fifthperc<-round(quantile(totalsMales$wt_mx_mean, .05), digits=1)
+    ninetyfifthperc<-round(quantile(totalsMales$wt_mx_mean, .95), digits=1)
+    
+    labels=c(paste0(""),fifthperc, range, ninetyfifthperc)
+    
+    colnames(shape@data)[1]<-"CTNAME"
+    shape$CTNAME<-as.numeric(as.character(shape$CTNAME))
+    
+    #Prep LE
+    names(CT)<-c("CTNAME","CT")
+    birth_all2<-totalsMales %>%
+      merge(CT, by="CT") %>%
+      select(CTNAME,wt_mx_mean) %>%
+      rename(mx=wt_mx_mean) 
+    birth_all2$CTNAME<-as.numeric(birth_all2$CTNAME)
+
+    #merge shapefiles with current Exp and Mortality
+    shape$CTNAME<-as.numeric(as.character(shape$CTNAME))
+    shapeMX<-merge(x=shape, y=birth_all2, by="CTNAME")
+    
+    
+    pdf(paste0(dir4, this_cause,"/",this_cause ,"_mxmap_",year,"_males.pdf"))
+    
+    #mapping life expectancy
+    names(shapeMX@data)[2]<-"exp"
+    shapeMX$exp<-as.numeric(shapeMX$exp)
+    shapeMX@data$exp<-cut(shapeMX@data$exp, breaks=c(0,at,Inf))
+    print(
+    spplot(shapeMX, "exp",  sp.layout=list("sp.polygons",shapeMX), col.regions=rev(viridis(8)), col="#bababa", par.settings = list(axis.line=list(col="transparent")), main=paste0(year," ", this_cause, " Mortality Rate per 100,000 for Males"), colorkey=list(labels=list(at=seq(0.5,length(at)+1), labels=labels))))
+    
+    dev.off()
+ 
+    load(paste0(dir2, "CT", CTs, file))#LOAD CT FILE
+    load(paste0(dir3, CTs, "CTs", file)) #REPLACE DESIRED CT MAP
+    shape<-spTransform(shape, crs("+init=epsg:4326"))
+  }
+}
+```
+

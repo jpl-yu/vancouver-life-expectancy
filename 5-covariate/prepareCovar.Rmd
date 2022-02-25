@@ -1,0 +1,473 @@
+---
+title: "prepareCovar"
+output: html_document
+---
+
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                                         
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                       
+                                                                                                         
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load all libraries and data                                          
+             (B) Interpolate missing data using multiple years of data                        
+             (C) Load and prepare crosswalk files                                               
+             (D) Linearly interpolate data so all years are available
+             (E) Finalise the covariate dataset and save file
+
+## Load all libraries and data 
+
+```{r}
+library("data.table")
+library("plyr")
+library("dplyr")
+library("tidyr")
+
+
+#Create import function for any covariables
+
+import<-function(covariable) {
+  dir<-"R:/working/preparing data/CovarData/allyears/"  
+  
+  for (i in c(2016,2011,2006,2001,1996,1991)) {
+    assign(paste0("covar", i), read.csv(paste0(dir, i,"/", covariable, i, ".csv"), header=T, sep=","))
+    }
+    
+  covar1991$year <-rep(1991,nrow(covar1991))
+  covar1996$year <-rep(1996,nrow(covar1996))
+  covar2001$year <-rep(2001,nrow(covar2001))
+  covar2006$year <-rep(2006,nrow(covar2006))
+  covar2011$year <-rep(2011,nrow(covar2011))
+  covar2016$year <-rep(2016,nrow(covar2016))
+
+  covarfiles<-rbind(covar1991,covar1996,covar2001,covar2006,covar2011,covar2016)
+  return(subset(covarfiles, CT>0))
+}
+
+#Import specific covariables and remove any years missing
+
+education<-import('education')
+education<-subset(education,year!=1996) #removed 1996 because it needs to be interpolated - can remove this later
+education<-education %>%
+  mutate(numerator=None+HS) %>% #creating variable that includes all below HS
+  select(CT, year, numerator, Total)
+
+aboriginal<-import('aboriginal')
+aboriginal<-aboriginal %>%
+#  subset(year!=2001) %>%#removed 2001 because it needs to be interpolated - can remove this later
+  select(CT,year,Aboriginal,Population)
+
+
+```
+
+## Interpolate missing data using multiple years of data  
+
+```{r}
+generateMissing<-function(covariable,col,col2,name,name2) {
+  covar270<-subset(covariable, CT==210 | CT==281.01 | CT==281.02 | CT==282.02 | CT==281.01| CT==283.00)#0
+  covar280<-subset(covariable, CT==280.01)
+  covar290<-subset(covariable, CT==290.06)
+  covar250<-subset(covariable, CT==250.01) #only input for 2006 and 2016
+
+#new imputations for missing covar files using historical data
+  col270<-mean(covar270[[col]], na.rm=T)
+  col280<-mean(covar280[[col]], na.rm = T)
+  col290<-mean(covar290[[col]], na.rm = T)
+  col250<-mean(covar250[[col]], na.rm = T)
+  col270.2<-mean(covar270[[col2]], na.rm=T)
+  col280.2<-mean(covar280[[col2]], na.rm = T)
+  col290.2<-mean(covar290[[col2]], na.rm = T)
+  col250.2<-mean(covar250[[col2]], na.rm = T)
+  year270<-c(1991,1996,2001,2006,2011)
+  CT270<-c(270)
+  year280<-c(1996,2001)
+  CT280<-c(280.01)
+  year290<-c(1996)
+  CT290<-c(290.06)
+  year250<-c(2011)
+  CT250<-c(250.01)
+  missingCT270<-data.frame(CT270,year270,col270,col270.2)
+  missingCT280<-data.frame(CT280,year280,col280,col280.2)
+  missingCT290<-data.frame(CT290,year290,col290,col290.2)
+  missingCT250<-data.frame(CT250,year250,col250,col250.2)
+      
+  names(missingCT270)<-c("CT","year", name, name2)
+  names(missingCT280)<-c("CT","year", name, name2)
+  names(missingCT290)<-c("CT","year", name, name2)
+  names(missingCT250)<-c("CT","year", name, name2)
+
+  return(missingCTs<-rbind(missingCT270, missingCT280, missingCT290, missingCT250))
+}
+
+#Remove missing files
+
+missingEdu<-generateMissing(education, "numerator","Total", "HS", "population")
+names(education)<-c("CT", "year", "HS", "population")
+education<-rbind(education,missingEdu)
+rm(missingEdu)
+
+
+missingAb<-generateMissing(aboriginal, "Aboriginal","Population", "aboriginal", "population")
+names(aboriginal)<-c("CT", "year", "aboriginal", "population")
+aboriginal<-rbind(aboriginal,missingAb)
+rm(missingAb)
+
+
+```
+
+
+#Load and prepare crosswalk files
+
+```{r}
+#load crosswalks
+
+applycw<-function(covariable, col, col2) {
+
+covariable<-aboriginal
+col<-"aboriginal"
+col2<-"population"
+  
+  crosswalk91<-read.csv(file="R:/working/preparing data/prepareCrosswalk/prepared/crosswalk91.csv", header=TRUE)
+  crosswalk96<-read.csv(file="R:/working/preparing data/prepareCrosswalk/prepared/crosswalk96.csv", header=TRUE)
+  crosswalk01<-read.csv(file="R:/working/preparing data/prepareCrosswalk/prepared/crosswalk01.csv", header=TRUE)
+  crosswalk06<-read.csv(file="R:/working/preparing data/prepareCrosswalk/prepared/crosswalk06.csv", header=TRUE)
+  crosswalk11<-read.csv(file="R:/working/preparing data/prepareCrosswalk/prepared/crosswalk11.csv", header=TRUE)
+
+  names(covariable)[1]<-"ctuid_s"
+  
+  for (i in c(2016,2011,2006,2001,1996,1991)) {
+    assign(paste0("covar", i), subset(covariable, year==i))
+    }
+  names(covar2016)[1]<-"ctuid_t"
+
+
+  
+  covar91<-covar1991
+  covar96<-covar1996
+  covar01<-covar2001
+  covar06<-covar2006
+  covar11<-covar2011
+  covar2016<-select(covar2016, "year","ctuid_t", col, col2)
+  names(covar2016)<-c("year","ctuid_t","covarnew","covarnew2")
+  
+  
+  #Multiply 1991 covar file with crosswalk table to get 2016 CT estimates
+  covar91<-merge(x=crosswalk91, y=covar91, by="ctuid_s", all.y=TRUE)
+    print(covar91)
+  covar91<-subset(covar91, ctuid_s>0)
+  covar91<-covar91[order(covar91$ctuid_s,covar91$year),]
+  covar91[[col]] <- covar91[["w"]] * covar91[[col]] 
+  covar91[[col2]] <- covar91[["w"]] * covar91[[col2]]
+  covar1991b = covar91 %>% group_by(ctuid_t, year) %>%
+    summarise_(covarnew  = paste0("sum(",col,", na.rm = T)"))
+  covar1991c = covar91 %>% group_by(ctuid_t, year) %>%
+  summarise_(covarnew2  = paste0("sum(",col2,", na.rm = T)"))
+  covar1991<-merge(covar1991b,covar1991c, by="ctuid_t")
+  names(covar1991)[2]<-"year"
+  covar1991<-select(covar1991,"year","ctuid_t","covarnew","covarnew2")
+
+  #Multiply 1996 covar file with crosswalk table to get 2016 CT estimates
+  covar96<-merge(x=crosswalk96, y=covar96, by="ctuid_s", all.y=TRUE)
+  covar96<-subset(covar96, ctuid_s>0)
+  covar96<-covar96[order(covar96$ctuid_s,covar96$year),]
+  covar96[[col]] <- covar96[["w"]] * covar96[[col]] 
+  covar96[[col2]] <- covar96[["w"]] * covar96[[col2]]
+  covar1996b = covar96 %>% group_by(ctuid_t, year) %>%
+    summarise_(covarnew  = paste0("sum(",col,", na.rm = T)"))
+  covar1996c = covar96 %>% group_by(ctuid_t, year) %>%
+  summarise_(covarnew2  = paste0("sum(",col2,", na.rm = T)"))
+  covar1996<-merge(covar1996b,covar1996c, by="ctuid_t")
+  names(covar1996)[2]<-"year"
+  covar1996<-select(covar1996,"year","ctuid_t","covarnew","covarnew2")
+  
+  #Multiply 2001 covar file with crosswalk table to get 2016 CT estimates
+  covar01<-merge(x=crosswalk01, y=covar01, by="ctuid_s", all.y=TRUE)
+  print(covar01)
+  covar01<-subset(covar01, ctuid_s>0)
+  covar01<-covar01[order(covar01$ctuid_s,covar01$year),]
+  covar01[[col]] <- covar01[["w"]] * covar01[[col]] 
+  covar01[[col2]] <- covar01[["w"]] * covar01[[col2]]
+  covar2001b = covar01 %>% group_by(ctuid_t, year) %>%
+    summarise_(covarnew  = paste0("sum(",col,", na.rm = T)"))
+  covar2001c = covar01 %>% group_by(ctuid_t, year) %>%
+  summarise_(covarnew2  = paste0("sum(",col2,", na.rm = T)"))
+  covar2001<-merge(covar2001b,covar2001c, by="ctuid_t")
+  names(covar2001)[2]<-"year"
+  covar2001<-select(covar2001,"year","ctuid_t","covarnew","covarnew2")
+  
+  #Multiply 2006 covar file with crosswalk table to get 2016 CT estimates
+  covar06<-merge(x=crosswalk06, y=covar06, by="ctuid_s", all.y=TRUE)
+  covar06<-subset(covar06, ctuid_s>0)
+  covar06<-covar06[order(covar06$ctuid_s,covar06$year),]
+  covar06[[col]] <- covar06[["w"]] * covar06[[col]] 
+  covar06[[col2]] <- covar06[["w"]] * covar06[[col2]]
+  covar2006b = covar06 %>% group_by(ctuid_t, year) %>%
+    summarise_(covarnew  = paste0("sum(",col,", na.rm = T)"))
+  covar2006c = covar06 %>% group_by(ctuid_t, year) %>%
+  summarise_(covarnew2  = paste0("sum(",col2,", na.rm = T)"))
+  covar2006<-merge(covar2006b,covar2006c, by="ctuid_t")
+  names(covar2006)[2]<-"year"
+  covar2006<-select(covar2006,"year","ctuid_t","covarnew","covarnew2")
+
+  
+  #Multiply 2011 covar file with crosswalk table to get 2016 CT estimates
+  covar11<-merge(x=crosswalk11, y=covar11, by="ctuid_s", all.y=TRUE)
+  covar11<-subset(covar11, ctuid_s>0)
+  covar11<-covar11[order(covar11$ctuid_s,covar11$year),]
+  covar11[[col]] <- covar11[["w"]] * covar11[[col]]
+  covar11[[col2]] <- covar11[["w"]] * covar11[[col2]]
+  covar2011b = covar11 %>% group_by(ctuid_t, year) %>%
+    summarise_(covarnew  = paste0("sum(",col,", na.rm = T)"))
+  covar2011c = covar11 %>% group_by(ctuid_t, year) %>%
+  summarise_(covarnew2  = paste0("sum(",col2,", na.rm = T)"))
+  covar2011<-merge(covar2011b,covar2011c, by="ctuid_t")
+  names(covar2011)[2]<-"year"
+  covar2011<-select(covar2011,"year","ctuid_t","covarnew","covarnew2")
+
+  
+  covarcwed<-rbind(covar1991,covar1996,covar2001,covar2006,covar2011,covar2016)
+  names(covarcwed)<-c("year","CT",col,col2)
+  
+
+  
+  return(covarcwed)
+  }
+
+#Apply crosswalk to covariable files and create education variable
+
+aboriginalcwed<-covarcwed
+
+aboriginalcwed<-applycw(aboriginal, "aboriginal","population")
+
+save(aboriginalcwed, file="R:/working/preparing data/CovarData/aboriginalcwed.RDATA")
+
+
+```
+
+#Merge Certain CTs
+
+```{r}
+library(dplyr)
+load("R:/working/preparing data/CovarData/aboriginalcwed.RDATA")
+
+merge<-function(covariable, col, col2) {
+  load(file="R:/working/preparing data/CTIDs.RData")
+  merge<-read.csv("R:/working/preparing data/Merge/merge_all12.csv", header=T)
+  
+  for (i in 1:nrow(merge)){
+    covariable$CT[which(covariable$CT==as.numeric(merge[i,1]))]<-as.numeric(merge[i,2])
+  }
+  
+  covar <-covariable %>%
+    group_by(CT,year) %>%
+    summarise_if(is.numeric, sum, na.rm=TRUE)
+  
+  covar<-subset(covar,CT!=270)
+  names(covar)<-c("CT","year",col,col2)
+  
+  return(covar)
+}
+
+#apply merge to covariables
+
+educationM<-merge(educationcwed, 'HS', 'population')
+educationM<-educationM %>%
+  mutate(education = HS/population) %>%
+  select(year,CT,education)
+
+aboriginalM<-merge(aboriginalcwed, 'aboriginal', 'population')
+aboriginalM<-aboriginalM %>%
+  mutate(Aboriginal = aboriginal/population) %>%
+  select(year,CT,Aboriginal)
+
+length(unique(aboriginalM$CT))
+
+```
+
+
+#Linearly interpolate data so all years are available
+
+```{r}
+load("R:/working/preparing data/CovarData/msdcwed.RDATA")
+
+#create a function to linearly interpolate data where 2001 data is unavailable
+interpolate2<-function(data, col) {
+  
+  covariable<-as.data.frame(data)
+  
+  covar91<-subset(covariable,year==1991)
+  covar96<-subset(covariable,year==1996)
+  covar01<-subset(covariable,year==2001)
+  covar06<-subset(covariable,year==2006)
+  covar11<-subset(covariable,year==2011)
+  covar16<-subset(covariable,year==2016)
+
+
+  
+  covar91<-select(covar91,"CT",col)
+  covar96<-select(covar96,"CT",col)
+  covar01<-select(covar01,"CT",col)
+  covar06<-select(covar06,"CT",col)
+  covar11<-select(covar11,"CT",col)
+  covar16<-select(covar16,"CT",col)
+  
+
+  
+  names(covar91)<-c("CT","covar91")
+  names(covar96)<-c("CT","covar96")
+  names(covar01)<-c("CT","covar01")
+  names(covar06)<-c("CT","covar06")
+  names(covar11)<-c("CT","covar11")
+  names(covar16)<-c("CT","covar16")
+  
+  #1991-1996
+  covar9691<-cbind(covar96, covar91)
+  
+  covar9691<-covar9691[,c(1,2,4)]
+  diff9691<-(covar9691$covar96-covar9691$covar91)/5
+  
+  covar9691$covar90<-covar9691$covar91#just replicated 1990 interpolations because negative numbers
+  covar9691$covar92<-covar9691$covar91+diff9691
+  covar9691$covar93<-covar9691$covar92+diff9691
+  covar9691$covar94<-covar9691$covar93+diff9691
+  covar9691$covar95<-covar9691$covar94+diff9691
+  
+  names(covar9691)[1]<-"CT"
+  
+  covar90<-covar9691[,c("CT","covar90")]
+  covar92<-covar9691[,c("CT","covar92")]
+  covar93<-covar9691[,c("CT","covar93")]
+  covar94<-covar9691[,c("CT","covar94")]
+  covar95<-covar9691[,c("CT","covar95")]
+  
+  #1996-2001
+  covar0196<-cbind(covar06,covar96)
+  covar0196<-covar0196[,c(1,2,4)]
+  diff0196<-(covar0196$covar06-covar0196$covar96)/5
+  
+  covar0196$covar97<-covar0196$covar96+diff0196
+  covar0196$covar98<-covar0196$covar97+diff0196
+  covar0196$covar99<-covar0196$covar98+diff0196
+  covar0196$covar00<-covar0196$covar99+diff0196
+  
+  names(covar0196)[1]<-"CT"
+  
+  covar97<-covar0196[,c("CT","covar97")]
+  covar98<-covar0196[,c("CT","covar98")]
+  covar99<-covar0196[,c("CT","covar99")]
+  covar00<-covar0196[,c("CT","covar00")]
+
+  #2001-2006
+  covar0601<-cbind(covar06,covar01)
+  covar0601<-covar0601[,c(1,2,4)]
+  diff0601<-(covar0601$covar06-covar0601$covar01)/5
+  
+  covar0601$covar02<-covar0601$covar01+diff0601
+  covar0601$covar03<-covar0601$covar02+diff0601
+  covar0601$covar04<-covar0601$covar03+diff0601
+  covar0601$covar05<-covar0601$covar04+diff0601
+  
+  names(covar0601)[1]<-"CT"
+  
+  covar02<-covar0601[,c("CT","covar02")]
+  covar03<-covar0601[,c("CT","covar03")]
+  covar04<-covar0601[,c("CT","covar04")]
+  covar05<-covar0601[,c("CT","covar05")]
+  
+  #2006-2011
+  covar0611<-cbind(covar06,covar11)
+  covar0611<-covar0611[,c(1,2,4)]
+  diff1106<-(covar0611$covar11-covar0611$covar06)/5
+  
+  covar0611$covar07<-covar0611$covar06+diff1106
+  covar0611$covar08<-covar0611$covar07+diff1106
+  covar0611$covar09<-covar0611$covar08+diff1106
+  covar0611$covar10<-covar0611$covar09+diff1106
+  
+  names(covar0611)[1]<-"CT"
+  
+  covar07<-covar0611[,c("CT","covar07")]
+  covar08<-covar0611[,c("CT","covar08")]
+  covar09<-covar0611[,c("CT","covar09")]
+  covar10<-covar0611[,c("CT","covar10")]
+  
+  #2011-2016
+  covar1116<-cbind(covar16,covar11)
+  covar1116<-covar1116[,c(1,2,4)]
+  diff1611<-(covar1116$covar16-covar1116$covar11)/5
+  
+  covar1116$covar12<-covar1116$covar11+diff1611
+  covar1116$covar13<-covar1116$covar12+diff1611
+  covar1116$covar14<-covar1116$covar13+diff1611
+  covar1116$covar15<-covar1116$covar14+diff1611
+  
+  names(covar1116)[1]<-"CT"
+  
+  covar12<-covar1116[,c("CT","covar12")]
+  covar13<-covar1116[,c("CT","covar13")]
+  covar14<-covar1116[,c("CT","covar14")]
+  covar15<-covar1116[,c("CT","covar15")]
+
+
+  
+  covar<-list(covar00,covar01,covar02,covar03,covar04,covar05,covar06,covar07,covar08,covar09,covar10,covar11,covar12,covar13,covar14,covar15,covar16,covar90,covar91,covar92,covar93,covar94,covar95,covar96,covar97,covar98,covar99)
+
+  
+  colnames<-c("CT", col)
+  covar<-lapply(covar, setNames, colnames)
+  years<-list(2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999)
+  
+  for (i in c(1:27)) {
+    covar[[i]]["year"]<-years[[i]]
+  }
+  
+  covar<-plyr::ldply(covar, data.frame)
+  
+  covar<-covar %>% select(year,CT,col) %>% arrange(year,CT)
+
+  return(covar)
+}
+
+aboriginalInt<-interpolate2(aboriginalM, 'Aboriginal')
+
+rm(merge)
+msd.soc<-interpolate2(msd, 'SocScore')
+msd.mat<-interpolate2(msd, 'MatScore')
+msd<-merge(msd.soc, msd.mat, by=c("year","CT"))
+msd<-msd %>% arrange(year,CT)
+
+save(aboriginalInt, file="R:/working/preparing data/CovarData/aboriginalInt.RDATA")
+save(msd, file="R:/working/preparing data/CovarData/msdInt.RDATA")
+
+```
+
+
+
+#Finalise the covariate dataset and save file
+
+```{r}
+load("R:/working/preparing data/CovarData/aboriginalInt.RDATA")
+load("R:/working/preparing data/CovarData/msdInt.RDATA")
+covar<-left_join(aboriginalInt,msd, by=c("year","CT")) 
+stdize = function(x,...){(x - min(x, ...)) / (max(x, ...) - min(x, ...))}
+covar <- covar %>%
+  mutate(msd=SocScore+MatScore) 
+covar$msd<-stdize(covar$msd, na.rm=T)
+
+
+covar$SocScore<-1-covar$SocScore
+covar$MatScore<-1-covar$MatScore
+covar$msd<-1-covar$msd
+
+covar<-covar %>%
+  group_by(CT)
+covar$CT<-as.numeric(as.factor(covar$CT))
+covar$CT<-(covar$CT-1)
+covar$CT<-as.integer(covar$CT)
+covar<-data.table::setDT(covar)
+save(covar, file="R:/working/modeling/cov_files/covar_368CTs.RData")
+```
+

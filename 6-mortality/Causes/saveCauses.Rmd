@@ -1,0 +1,146 @@
+---
+title: "SaveCauses"
+output: html_document
+---
+   Written by: Jessica Yu, 2022.                                                                         
+               jessica_yu@alumni.ubc.ca                                                                               
+                                                                                             
+   Data from: Statistics Canada, Population Data BC, BC Ministry of Health, and The Canadian Urban Environmental Health Research Consortium                       
+   Paper published from this work: 
+   Yu J, Dwyer-Lindgren L, Bennett J, Ezzati M, Gustafson P, Tran M, Brauer M. A spatiotemporal analysis of inequalities in life expectancy and 20 causes of mortality in sub-neighbourhoods of Metro Vancouver, British Columbia, Canada, 1990–2016. Health & place. 2021 Nov 1;72:102692. Available from: https://doi.org/10.1016/j.healthplace.2021.102692                                                    
+                                                                                                         
+   **Outline**                                                                                               
+             (A) Load libraries, import data, and define attributes                                                  
+             (B) Combine death files and remove death files without causes                                        
+             (C) Group deaths by causes                                                                   
+             (D) Link death files with gbd codes
+             (E) Save individual cause-specific data frames
+
+## Load libraries, import data, and define attributes  
+             
+```{r}
+library(dplyr)
+library(data.table)
+load("R:/working/preparing data/DeathData/garbagecodes/icd10/deathsbyCauseICD10.RDATA")
+load("R:/working/preparing data/DeathData/garbagecodes/icd9/deathsbyCausesICD9_final.RDATA")
+
+load("R:/working/preparing data/DeathData/causefiles.RData")
+causenames=substr(causefiles,1,nchar(causefiles)-4)
+
+causeids<-read.csv(file="R:/working/preparing data/DeathData/causes/gbdcauseids.csv", header=T)
+```
+
+## Combine death files and remove death files without causes
+
+```{r}
+allCauseDeaths<-rbind(deathsbyCauses9final,deathsbyCauses10final)
+allCauseDeaths<-subset(allCauseDeaths, causes!=0)
+
+save(allCauseDeaths, file="R:/working/preparing data/DeathData/causes/allCauseDeaths.rdata")
+```
+
+
+## Group deaths by causes
+
+```{r}
+causecounts=paste0(substr(causefiles,1,nchar(causefiles)-4),"_deaths")
+
+#Create individual dataframes for each cause
+for (y in causenames) {
+  assign(paste0(y,"_deaths"),subset(allCauseDeaths,causes==paste0(y)))
+}
+
+deathsByCause<-mget(ls(pattern='+_deaths'))
+#deathsByCause2<-lapply(deathsByCause, function(x) { x[["causes"]]<-NULL; x })
+#list2env(deathsByCause2,.GlobalEnv)
+
+deathsByCause3<-lapply(deathsByCause, function(x) count(x, year, CT, sex, age,causes))
+colnames<-c("year","CT","sex","age","acause","death")
+deathsByCause3<-lapply(deathsByCause3, setNames,colnames)
+deathsByCause3<-lapply(deathsByCause3, function(df){
+                       df[order(df$CT),]
+                       })
+deathsByCause<-lapply(deathsByCause3, function(df) setDT(df))
+
+allDeaths<-do.call(rbind.data.frame, deathsByCause)
+
+```
+
+## Link death files with gbd codes
+
+```{r}
+death_and_ids<-left_join(x=allDeaths, y=causeids, by="acause")
+death_and_ids<-select(death_and_ids, year,CT,sex,age,level,parent_id,cause_id,acause,death,level_0,level_1,level_2)
+deaths<-death_and_ids
+
+#Save full deaths list with causes
+save(deaths, file="R:/working/preparing data/DeathData/causes/all/deaths.Rdata")
+
+
+```
+
+
+## Save individual cause-specific data frames
+
+```{r}
+list2env(deathsByCause,.GlobalEnv)
+
+#Save in CSV format
+lapply(names(deathsByCause), function(X) write.csv(deathsByCause[[X]], file=paste0(X, ".csv")))
+
+#Save in RDATA format
+lapply(names(deathsByCause), function(X) {
+  assign(X, deathsByCause[[X]])
+  save(list=X, file=paste0(X, ".Rdata"))
+})
+
+#Rename all cause lists to deaths and save
+
+dir<-"R:/working/preparing data/DeathData/causes/deathfiles/"
+
+deaths<-cvd_deaths
+save(deaths, file = paste0(dir,"cvd_deaths.RData"))
+deaths<-msk_deaths
+save(deaths, file = paste0(dir,"msk_deaths.RData"))
+deaths<-skin_deaths
+save(deaths, file = paste0(dir,"skin_deaths.RData"))
+deaths<-diab_ckd_deaths
+save(deaths, file = paste0(dir,"diab_ckd_deaths.RData"))
+deaths<-digest_deaths
+save(deaths, file = paste0(dir,"digest_deaths.RData"))
+deaths<-enteric_all_deaths
+save(deaths, file = paste0(dir,"enteric_all_deaths.RData"))
+deaths<-hiv_std_deaths
+save(deaths, file = paste0(dir,"hiv_std_deaths.RData"))
+deaths<-infect_deaths
+save(deaths, file = paste0(dir,"infect_deaths.RData"))
+deaths<-inj_trans_deaths
+save(deaths, file = paste0(dir,"inj_trans_deaths.RData"))
+deaths<-intent_deaths
+save(deaths, file = paste0(dir,"intent_deaths.RData"))
+deaths<-mater_neonat_deaths
+save(deaths, file = paste0(dir,"mater_neonat_deaths.RData"))
+deaths<-mental_deaths
+save(deaths, file = paste0(dir,"mental_deaths.RData"))
+deaths<-neo_deaths
+save(deaths, file = paste0(dir,"neo_deaths.RData"))
+deaths<-neuro_deaths
+save(deaths, file = paste0(dir,"neuro_deaths.RData"))
+deaths<-ntd_deaths
+save(deaths, file = paste0(dir,"ntd_deaths.RData"))
+deaths<-nutrition_deaths
+save(deaths, file = paste0(dir,"nutrition_deaths.RData"))
+deaths<-otherncd_deaths
+save(deaths, file = paste0(dir,"otherncd_deaths.RData"))
+deaths<-resp_deaths
+save(deaths, file = paste0(dir,"resp_deaths.RData"))
+deaths<-respinfect_deaths
+save(deaths, file = paste0(dir,"respinfect_deaths.RData"))
+deaths<-subs_deaths
+save(deaths, file = paste0(dir,"subs_deaths.RData"))
+deaths<-unintent_deaths
+save(deaths, file = paste0(dir,"unintent_deaths.RData"))
+
+```
+
+
